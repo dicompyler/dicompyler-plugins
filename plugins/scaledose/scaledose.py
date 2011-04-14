@@ -11,7 +11,7 @@
 import wx
 from wx.xrc import XmlResource, XRCCTRL, XRCID
 from wx.lib.pubsub import Publisher as pub
-import os, threading
+import os.path, threading
 import guiutil, util
 
 def pluginProperties():
@@ -39,7 +39,8 @@ class plugin:
         pub.subscribe(self.OnUpdatePatient, 'patient.updated.raw_data')
 
         # Load the XRC file for our gui resources
-        self.res = XmlResource(util.GetBasePluginsPath('scaledose/scaledose.xrc'))
+        xrc = os.path.join(os.path.dirname(__file__), 'scaledose.xrc')
+        self.res = XmlResource(xrc)
 
     def OnUpdatePatient(self, msg):
         """Update and load the patient data."""
