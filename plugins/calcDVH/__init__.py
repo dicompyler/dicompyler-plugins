@@ -1,3 +1,3 @@
 # __init__.py
 
-from modulename import pluginProperties, plugin
+from calcDVH import pluginProperties, plugin
