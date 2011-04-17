@@ -4,8 +4,10 @@ import wx
 from wx.lib.pubsub import Publisher as pub
 import numpy as np
 import dicom
+import matplotlib.mlab as mlab
+import numpy.testing as npt
+    
 import unittest
-
 import os
 
 
@@ -72,15 +74,16 @@ class plugin:
         pub.sendMessage('patient.updated.raw_data', self.ptdata)
         
         
-def SumPlan(old, new, force_interp=False):
+def SumPlan(old, new, interp_method=''):
     """ Given two Dicom RTDose objects, returns a summed RTDose object"""
     """The summed RTDose object will consist of pixels inside the region of 
     overlap between the two pixel_arrays.  The pixel spacing will be the 
     coarser of the two objects in each direction.  The new DoseGridScaling
     tag will be the sum of the tags of the two objects.
-    force_interp: A boolean that forces SumPlan to interpolate the 
-        arrays for the sum, even if they could be directly summed.  Used
-        for unit testing."""
+    
+    interp_method: A string that is one of ['scipy','weave','python'].  
+        This forces SumPlan to use a particular interpolation method, even if 
+        the dose objects could be directly summed.  Used for unit testing."""
     
     #Recycle the new Dicom object to store the summed dose values
     sum_dcm = new
@@ -91,12 +94,14 @@ def SumPlan(old, new, force_interp=False):
         old.pixel_array.shape == new.pixel_array.shape and
         old.PixelSpacing == new.PixelSpacing and
         old.GridFrameOffsetVector == new.GridFrameOffsetVector and 
-        not force_interp):
+        not interp_method):
         print "PlanSum: Using direct summation"
         sum = old.pixel_array*old.DoseGridScaling + \
                 new.pixel_array*new.DoseGridScaling
         
     else:    
+        if not interp_method:
+            interp_method = 'scipy'
         #Compute mapping from xyz (physical) space to ijk (index) space
         scale_old = np.array([old.PixelSpacing[0],old.PixelSpacing[1],
                     old.GridFrameOffsetVector[1]-old.GridFrameOffsetVector[0]])
@@ -153,9 +158,9 @@ def SumPlan(old, new, force_interp=False):
         #(zyx).  The x and z axes are swapped before interpolation to coincide
         #with the xyz ordering of ImagePositionPatient
         sum = interpolate_image(np.swapaxes(old.pixel_array,0,2), scale_old, 
-            old.ImagePositionPatient, sum_xyz_coords)*old.DoseGridScaling + \
+            old.ImagePositionPatient, sum_xyz_coords, interp_method)*old.DoseGridScaling + \
             interpolate_image(np.swapaxes(new.pixel_array,0,2), scale_new, 
-            new.ImagePositionPatient, sum_xyz_coords)*new.DoseGridScaling
+            new.ImagePositionPatient, sum_xyz_coords, interp_method)*new.DoseGridScaling
         
         #Swap the x and z axes back
         sum = np.swapaxes(sum, 0, 2)
@@ -179,96 +184,94 @@ def SumPlan(old, new, force_interp=False):
     sum_dcm.PixelData = sum.tostring()
     sum_dcm.DoseGridScaling = sum_scaling
     return sum_dcm
-   
-def interpolate_image(input_array, scale, offset, xyz_coords):
+  
+def interpolate_image(input_array, scale, offset, xyz_coords, interp_method):
     """Interpolates an array at the xyz coordinates given"""
     """Parameters:
         input_array: a 3D numpy array
+        
         scale: a list of 3 floats which give the pixel spacing in xyz
+        
         offset: the xyz coordinates of the origin of the input_array
+        
         xyz_coordinates: the coordinates at which the input is evaluated. 
         
-        The purpose of this function is to convert the xyz coordinates to
-        index space, which scipy.ndimage.map_coordinates and trilinear_interp
-        require.  Following the scipy convention, the xyz_coordinates array is
-        an array of three  i x j x k element arrays.  The first element contains 
-        the x axis value for each of the i x j x k elements, the second contains
-        the y axis value, etc."""
+        interp_method: A string that is one of ['scipy','weave','python'].  
+            Forces the use of a particular interpolation method.  Used 
+            for unit testing.  If the specified method is not available, the
+            function will attempt the next method in order.
         
-    #scipy.ndimage.map_coordinates and trilinear.trilinear are much faster than
-    #the python interpolation.  Use them if possible.
-    use_scipy = True
-    use_trilinear = True
-    try:
-        import scipy.ndimage
-    except ImportError:
-        use_scipy = False
-    
-    try:
-        import trilinear
-    except ImportError:
-        use_trilinear = False
-    
+    The purpose of this function is to convert the xyz coordinates to
+    index space, which scipy.ndimage.map_coordinates and trilinear_interp
+    require.  Following the scipy convention, the xyz_coordinates array is
+    an array of three  i x j x k element arrays.  The first element contains 
+    the x axis value for each of the i x j x k elements, the second contains
+    the y axis value, etc."""
+        
     indices = np.empty(xyz_coords.shape)
     indices[0] = (xyz_coords[0] - offset[0])/scale[0]
     indices[1] = (xyz_coords[1] - offset[1])/scale[1]
     indices[2] = (xyz_coords[2] - offset[2])/scale[2]
     
-    if use_scipy:            
-        print "PlanSum: Using scipy.ndimage.map_coordinates"
-        return scipy.ndimage.map_coordinates(input_array, indices, order=1)
-    elif use_trilinear:
-        print "PlanSum: Using trilinear.trilinear"
-        #Trilinear module requires strict typing of input to uint32
-        input_array = np.uint32(input_array)
-        output = np.zeros(indices[0].shape, dtype=np.float64)
-        trilinear.trilinear(input_array, indices, output)           
-        return output
-    else:
-        print "PlanSum: Using trilinear_interp"
-        return trilinear_interp(input_array, indices)
+    #scipy.ndimage.map_coordinates and trilinear.trilinear are much faster than
+    #the python interpolation.  Use them if possible.
+    if interp_method == 'scipy':
+
+        try:
+            import scipy.ndimage
+            print "PlanSum: Using scipy.ndimage.map_coordinates"
+            return scipy.ndimage.map_coordinates(input_array, indices, order=1)
+        except ImportError:
+            interp_method = 'weave'
     
+    if interp_method == 'weave':
+        
+        try:
+            import trilinear
+            print "PlanSum: Using trilinear.trilinear"
+            #Trilinear module requires strict typing of input to uint32
+            input_array = np.uint32(input_array)
+            output = np.zeros(indices[0].shape, dtype=np.float64)
+            trilinear.trilinear(input_array, indices, output)           
+            return output
+        except ImportError:
+            pass
+    
+    print "PlanSum: Using trilinear_interp"
+    return trilinear_interp(input_array, indices)
+
 def trilinear_interp(input_array, indices):
-    """Evaluate the input_array data at the indices given"""
-    
     output = np.empty(indices[0].shape)
     x_indices = indices[0]
     y_indices = indices[1]
     z_indices = indices[2]
-    for i in np.ndindex(x_indices.shape):
-        x0 = np.floor(x_indices[i])
-        y0 = np.floor(y_indices[i])
-        z0 = np.floor(z_indices[i])
-        x1 = x0 + 1
-        y1 = y0 + 1
+    input_indices = np.indices(input_array.shape)
+    intermediate = np.empty((x_indices.shape[0],
+                             x_indices.shape[1],
+                             input_array.shape[2]))
+    
+    for k in range(input_array.shape[2]):
+        intermediate[:,:,k] = mlab.griddata(input_indices[0,:,:,k].flatten(),
+                                            input_indices[1,:,:,k].flatten(),
+                                            input_array[:,:,k].flatten(),
+                                            x_indices[:,:,0],y_indices[:,:,0])
+        
+    for k in range(output.shape[2]):
+        z0 = int(z_indices[0,0,k])
         z1 = z0 + 1
-        #Check if xyz1 is beyond array boundary:
-        if x1 == input_array.shape[0]:
-            x1 = x0
-        if y1 == input_array.shape[1]:
-            y1 = y0
         if z1 == input_array.shape[2]:
             z1 = z0
-        x = x_indices[i] - x0
-        y = y_indices[i] - y0
-        z = z_indices[i] - z0
-        output[i] = (input_array[x0,y0,z0]*(1-x)*(1-y)*(1-z) +
-                     input_array[x1,y0,z0]*x*(1-y)*(1-z) +
-                     input_array[x0,y1,z0]*(1-x)*y*(1-z) +
-                     input_array[x0,y0,z1]*(1-x)*(1-y)*z +
-                     input_array[x1,y0,z1]*x*(1-y)*z +
-                     input_array[x0,y1,z1]*(1-x)*y*z +
-                     input_array[x1,y1,z0]*x*y*(1-z) +
-                     input_array[x1,y1,z1]*x*y*z)
-
+        z = z_indices[0,0,k] % 1
+        output[:,:,k] = (1-z)*intermediate[:,:,z0]+z*intermediate[:,:,z1]
+        
     return output
 
 class PlanSumTest(unittest.TestCase):
     
-    def testMethod(self):
-        ss = dicom.read_file('../testdata/plansum/rtss.dcm')
-        rtd1 = dicom.read_file('../testdata/plansum/rtdose1.dcm')
-        rtd2 = dicom.read_file('../testdata/plansum/rtdose2.dcm')
+    def testPlanSum(self):
+        ss = dicom.read_file('./testdata/rtss.dcm')
+        rtd1 = dicom.read_file('./testdata/rtdose1.dcm')
+        rtd2 = dicom.read_file('./testdata/rtdose2.dcm')
 
         sum = SumPlan(rtd1, rtd2)
         
@@ -287,20 +290,19 @@ class PlanSumTest(unittest.TestCase):
         self.assertTrue(difference < delta,
                 "difference: %s is not less than %s" % (difference, delta))
         
-    def test_interpolation(self):
-        import scipy.ndimage
-        a = np.arange(24000, dtype=np.uint32).reshape((40,30,20))
-        i,j,k = np.mgrid[0:39,0:29,0:19]
+    def testInterpolation(self):
         
-        #Create a 3 x i x j x k array of xyz coordinates for the interpolation.
-        b = np.array([i,j,k], dtype=np.float64)
-        c = scipy.ndimage.map_coordinates(a, b, order = 1)
-        d = np.zeros(b[0].shape, dtype=np.float64)
-        trilinear.trilinear(a,b,d)
-        for i in np.ndindex(c.shape):
-            self.assertAlmostEqual(c[i],d[i])
+        rtd = dicom.read_file('d:/trilinear/testdata/rtdose.dcm')
+        a = SumPlan(rtd, rtd)
+        b = SumPlan(rtd, rtd, interp_method='scipy')
+        c = SumPlan(rtd, rtd, interp_method='weave')
+        d = SumPlan(rtd, rtd, interp_method='python')
+        
+        npt.assert_equal(a.pixel_array,b.pixel_array)
+        npt.assert_equal(a.pixel_array,c.pixel_array)
+        npt.assert_equal(a.pixel_array,d.pixel_array)
+        
                      
 if __name__ == '__main__':
     unittest.main()
-    #rtd = dicom.read_file('../testdata/rtdose.dcm')
-    #SumPlan(rtd, rtd, force_interp = True)
+    
