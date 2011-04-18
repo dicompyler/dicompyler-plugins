@@ -1,4 +1,4 @@
-import dicomgui
+import dicomgui, guiutil
 
 import wx
 from wx.lib.pubsub import Publisher as pub
@@ -9,6 +9,7 @@ import numpy.testing as npt
     
 import unittest
 import os
+import threading, Queue
 
 
 def pluginProperties():
@@ -67,14 +68,22 @@ class plugin:
         
         old = self.rtdose
         new = self.ptdata['rtdose']
-        sumDicomObj = SumPlan(old, new)
+        dlgProgress = guiutil.get_progress_dialog(
+                wx.GetApp().GetTopWindow(),
+                "Creating Plan Sum...")
+        q = Queue.Queue()
+        threading.Thread(target=SumPlan, args=(old, new, q,
+                                        dlgProgress.OnUpdateProgress)).start()
+        dlgProgress.ShowModal()
+        dlgProgress.Destroy()
+        sumDicomObj = q.get()
         self.ptdata['rtdose'] = sumDicomObj
         if self.ptdata.has_key('rxdose') and self.rxdose:
             self.ptdata['rxdose'] = self.rxdose + self.ptdata['rxdose']
         pub.sendMessage('patient.updated.raw_data', self.ptdata)
         
         
-def SumPlan(old, new, interp_method=''):
+def SumPlan(old, new, q, progressFunc=None, interp_method=''):
     """ Given two Dicom RTDose objects, returns a summed RTDose object"""
     """The summed RTDose object will consist of pixels inside the region of 
     overlap between the two pixel_arrays.  The pixel spacing will be the 
@@ -96,6 +105,7 @@ def SumPlan(old, new, interp_method=''):
         old.GridFrameOffsetVector == new.GridFrameOffsetVector and 
         not interp_method):
         print "PlanSum: Using direct summation"
+        wx.CallAfter(progressFunc, 0, 1, 'Using direct summation')
         sum = old.pixel_array*old.DoseGridScaling + \
                 new.pixel_array*new.DoseGridScaling
         
@@ -158,9 +168,11 @@ def SumPlan(old, new, interp_method=''):
         #(zyx).  The x and z axes are swapped before interpolation to coincide
         #with the xyz ordering of ImagePositionPatient
         sum = interpolate_image(np.swapaxes(old.pixel_array,0,2), scale_old, 
-            old.ImagePositionPatient, sum_xyz_coords, interp_method)*old.DoseGridScaling + \
+            old.ImagePositionPatient, sum_xyz_coords, interp_method,
+            progressFunc)*old.DoseGridScaling + \
             interpolate_image(np.swapaxes(new.pixel_array,0,2), scale_new, 
-            new.ImagePositionPatient, sum_xyz_coords, interp_method)*new.DoseGridScaling
+            new.ImagePositionPatient, sum_xyz_coords, interp_method,
+            progressFunc)*new.DoseGridScaling
         
         #Swap the x and z axes back
         sum = np.swapaxes(sum, 0, 2)
@@ -183,9 +195,11 @@ def SumPlan(old, new, interp_method=''):
     sum_dcm.HighBit = 31
     sum_dcm.PixelData = sum.tostring()
     sum_dcm.DoseGridScaling = sum_scaling
-    return sum_dcm
+    wx.CallAfter(progressFunc, 1, 1, 'Done')
+    q.put(sum_dcm)
   
-def interpolate_image(input_array, scale, offset, xyz_coords, interp_method):
+def interpolate_image(input_array, scale, offset, xyz_coords, interp_method, 
+                      progressFunc=None):
     """Interpolates an array at the xyz coordinates given"""
     """Parameters:
         input_array: a 3D numpy array
@@ -220,6 +234,7 @@ def interpolate_image(input_array, scale, offset, xyz_coords, interp_method):
         try:
             import scipy.ndimage
             print "PlanSum: Using scipy.ndimage.map_coordinates"
+            wx.CallAfter(progressFunc, 0, 1, 'Using SciPy')
             return scipy.ndimage.map_coordinates(input_array, indices, order=1)
         except ImportError:
             interp_method = 'weave'
@@ -232,15 +247,16 @@ def interpolate_image(input_array, scale, offset, xyz_coords, interp_method):
             #Trilinear module requires strict typing of input to uint32
             input_array = np.uint32(input_array)
             output = np.zeros(indices[0].shape, dtype=np.float64)
+            wx.CallAfter(progressFunc, 0, 1, 'Using trilinear weave')
             trilinear.trilinear(input_array, indices, output)           
             return output
         except ImportError:
             pass
     
     print "PlanSum: Using trilinear_interp"
-    return trilinear_interp(input_array, indices)
+    return trilinear_interp(input_array, indices, progressFunc)
 
-def trilinear_interp(input_array, indices):
+def trilinear_interp(input_array, indices, progressFunc=None):
     output = np.empty(indices[0].shape)
     x_indices = indices[0]
     y_indices = indices[1]
@@ -251,12 +267,18 @@ def trilinear_interp(input_array, indices):
                              input_array.shape[2]))
     
     for k in range(input_array.shape[2]):
+        if progressFunc:
+            wx.CallAfter(progressFunc, k, input_array.shape[2],
+                'Interpolating x and y')
         intermediate[:,:,k] = mlab.griddata(input_indices[0,:,:,k].flatten(),
                                             input_indices[1,:,:,k].flatten(),
                                             input_array[:,:,k].flatten(),
                                             x_indices[:,:,0],y_indices[:,:,0])
         
     for k in range(output.shape[2]):
+        if progressFunc:
+            wx.CallAfter(progressFunc, k, output.shape[2],
+                'Interpolating z')
         z0 = int(z_indices[0,0,k])
         z1 = z0 + 1
         if z1 == input_array.shape[2]:
