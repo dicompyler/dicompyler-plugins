@@ -1,4 +1,8 @@
-import dicomgui, guiutil
+try:
+    import dicomgui, guiutil
+except ImportError:
+    #Running as __main__, not as a plugin
+    pass
 
 import wx
 from wx.lib.pubsub import Publisher as pub
@@ -19,11 +23,13 @@ def pluginProperties():
     props['name'] = 'Sum RT Dose'
     props['description'] = "Adds multiple RT Dose objects together."
     props['author'] = 'Stephen Terry'
-    props['version'] = 0.13
+    props['version'] = 0.2
     props['plugin_type'] = 'menu'
     props['plugin_version'] = 1
     props['min_dicom'] = ['rtdose','rtplan']
     props['recommended_dicom'] = ['rtdose','rtplan']
+    props['documentation'] = \
+        'http://code.google.com/p/dicompyler-plugins/wiki/plansum'
 
     return props
 
@@ -314,7 +320,7 @@ class PlanSumTest(unittest.TestCase):
         
     def testInterpolation(self):
         
-        rtd = dicom.read_file('d:/trilinear/testdata/rtdose.dcm')
+        rtd = dicom.read_file('../testdata/rtdose.dcm')
         a = SumPlan(rtd, rtd)
         b = SumPlan(rtd, rtd, interp_method='scipy')
         c = SumPlan(rtd, rtd, interp_method='weave')
