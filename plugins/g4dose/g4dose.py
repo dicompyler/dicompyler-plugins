@@ -61,10 +61,10 @@ class plugin():
                 if os.path.isfile(path+"/Data.dat") and os.path.isfile(path+"/dicom.out"):
                     self.addElement(loadG4DoseGraph(path,self.data['images']))
                 else:
-		    print os.path.isfile(path+"/Data.dat")
-		    print path+"/Data.dat"
-		    print os.path.isfile(path+"/dicom.out")
-		    msg = "Please select the GEANT4 DICOM project folder.\nData.dat + Dicom.out are required!"
+                    print os.path.isfile(path+"/Data.dat")
+                    print path+"/Data.dat"
+                    print os.path.isfile(path+"/dicom.out")
+                    msg = "Please select the GEANT4 DICOM project folder.\nData.dat + Dicom.out are required!"
                     loop=True
             dirdlg.Destroy()
 
@@ -133,18 +133,20 @@ def loadG4DoseGraph(path,ds):
    
     curRow = 0
     curSlice = 0
-    
+
     for index, vID in enumerate(doseTable[:, 0]):
+        #Search for corresponding slice.
         for i in range(curSlice,sliceCount):
-            #Check for corresponding slice.
-            if vID >= i*area and vID <= (i+1)*area:
+            if vID >= i*area and vID < (i+1)*area:
                 curSlice = i
                 curRow = 0
-            #Search for corresponding row.
-            for j in range(curRow,voxelRow):
-                #Find the row that vID falls into.
-                if (vID - curSlice*area) >= j*voxelRow and (vID - curSlice*area) <= (j+1)*voxelRow:
-                    curRow = j
+                break
+        #Search for corresponding row.
+        for j in range(curRow,voxelRow):
+            #Find the row that vID falls into.
+            if (vID - curSlice*area) >= j*voxelRow and (vID - curSlice*area) < (j+1)*voxelRow:
+                curRow = j
+                break
         #2xN -> SlicesxRowxCol
         yShift = curRow
         xShift = vID - curRow*voxelCol - curSlice*area
@@ -164,9 +166,7 @@ def loadG4DoseGraph(path,ds):
         imageData.append([])
         #Use PIL to resize, Voxel to Pixel conversion.
         imageData[i] = np.array(Image.frombuffer('I',(voxelRow,voxelCol),imageList[i],'raw','I',0,1).resize((imageCol, imageRow), Image.NEAREST),np.uint32)
-        for j in range(imageRow):
-            for k in range(imageCol):
-                pD3D[i][j][k] = imageData[i][j][k]
+        pD3D[i] = imageData[i]
         if prog[0]:
             guageCount+=1
             prog = guage.Update(guageCount,"Building RT-Dose from GEANT4 simulation\nRe-sizing image: {0:n}".format(i+1))
