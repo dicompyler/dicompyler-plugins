@@ -17,9 +17,9 @@ def pluginProperties():
 
     props = {}
     props['name'] = 'G4 RT-Dose'
-    props['description'] = "Create RT-Dose from a GEANT4 DICOM project. "
-    props['author'] = 'D. M. Tishler & B. P. Tonner'
-    props['version'] = 0.1
+    props['description'] = "Create RT-Dose from a Geant4 DICOM simulation."
+    props['author'] = 'D.M. Tishler & B.P. Tonner'
+    props['version'] = 0.2
     props['documentation'] = 'http://code.google.com/p/dicompyler-plugins/wiki/g4dose'
     props['license'] = 'license.txt'
     props['plugin_type'] = 'menu'
@@ -58,22 +58,25 @@ class plugin():
             if dirdlg.ShowModal() == wx.ID_OK:
                 path = dirdlg.GetPath()
                 #Confirm G4 simulation input and output files are found.
-                if os.path.isfile(path+"\\data.dat") and os.path.isfile(path+"\\dicom.out"):
+                if os.path.isfile(path+"/Data.dat") and os.path.isfile(path+"/dicom.out"):
                     self.addElement(loadG4DoseGraph(path,self.data['images']))
                 else:
-                    msg = "Please select the GEANT4 DICOM project folder.\nData.dat + Dicom.out are required!"
+		    print os.path.isfile(path+"/Data.dat")
+		    print path+"/Data.dat"
+		    print os.path.isfile(path+"/dicom.out")
+		    msg = "Please select the GEANT4 DICOM project folder.\nData.dat + Dicom.out are required!"
                     loop=True
             dirdlg.Destroy()
 
 def loadG4DoseGraph(path,ds):
 
     #Load number of slices and compression value from data.dat.
-    file = open(path+"\\data.dat")
+    file = open(path+"/Data.dat")
     compression = int(file.readline())
     sliceCount = int(file.readline())
 
     #Load dosegraph from dicom.out
-    doseTable = np.loadtxt(path+"\\dicom.out")
+    doseTable = np.loadtxt(path+"/dicom.out")
     
     #Exit if simulator had null output.
     if len(doseTable) == 0:
@@ -166,7 +169,7 @@ def loadG4DoseGraph(path,ds):
                 pD3D[i][j][k] = imageData[i][j][k]
         if prog[0]:
             guageCount+=1
-            prog = guage.Update(guageCount,"Building RT-Dose from GEANT4 simulation\Re-sizing image: {0:n}".format(i+1))
+            prog = guage.Update(guageCount,"Building RT-Dose from GEANT4 simulation\nRe-sizing image: {0:n}".format(i+1))
         else:
             guage.Destroy()
             return
@@ -177,7 +180,7 @@ def loadG4DoseGraph(path,ds):
     except:
         #RT-Dose sample not found.
         try:
-            rtDose = copyCTtoRTDose(dicom.read_file(util.GetBasePluginsPath('\\g4dose\\rtdosesample.dcm')), ds[0], imageRow, imageCol, sliceCount, doseGridScale)
+            rtDose = copyCTtoRTDose(dicom.read_file(util.GetBasePluginsPath('g4dose/rtdosesample.dcm')), ds[0], imageRow, imageCol, sliceCount, doseGridScale)
         except:
             dial = wx.MessageDialog(None, 'Could not load sample RT-Dose.dcm!\nPlease see documentation', 'Error', wx.OK | wx.ICON_ERROR)
             dial.ShowModal()
