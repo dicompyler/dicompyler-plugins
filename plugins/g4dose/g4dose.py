@@ -8,6 +8,7 @@
 import wx
 from wx.lib.pubsub import Publisher as pub
 import dicom
+from dicom.dataset import Dataset, FileDataset
 import os
 import numpy as np
 from PIL import Image
@@ -174,19 +175,7 @@ def loadG4DoseGraph(path,ds):
             guage.Destroy()
             return
 
-    #Create new RT-Dose file from sample.
-    try:
-        rtDose = copyCTtoRTDose(dicom.read_file(util.GetBasePluginsPath('rtdosesample.dcm')), ds[0], imageRow, imageCol, sliceCount, doseGridScale)
-    except:
-        #RT-Dose sample not found.
-        try:
-            rtDose = copyCTtoRTDose(dicom.read_file(util.GetBasePluginsPath('g4dose/rtdosesample.dcm')), ds[0], imageRow, imageCol, sliceCount, doseGridScale)
-        except:
-            dial = wx.MessageDialog(None, 'Could not load sample RT-Dose.dcm!\nPlease see documentation', 'Error', wx.OK | wx.ICON_ERROR)
-            dial.ShowModal()
-            guageCount+=1
-            guage.Update(guageCount,"Building RT-Dose from GEANT4 simulation\n")
-            return
+    rtDose = copyCTtoRTDose(path, ds[0], imageRow, imageCol, sliceCount, doseGridScale)
         
     #Store images in pixel_array(int) & Pixel Data(raw).  
     rtDose.pixel_array = pD3D
@@ -199,30 +188,37 @@ def loadG4DoseGraph(path,ds):
     
     return rtDose,rxdose
 
-def copyCTtoRTDose(rtdose,ds,imageRow,imageCol, sliceCount,dgs):
+def copyCTtoRTDose(path,ds,imageRow,imageCol, sliceCount,dgs):
+    file_meta = Dataset()
+    file_meta.MediaStorageSOPClassUID = ds.file_meta.MediaStorageSOPClassUID # CT Image Storage
+    file_meta.MediaStorageSOPInstanceUID = ds.file_meta.MediaStorageSOPInstanceUID # !! Need valid UID here for real work
+    file_meta.ImplementationClassUID = ds.file_meta.ImplementationClassUID # !!! Need valid UIDs here
 
-    #No DICOM object standard...
+    rtdose = FileDataset(path + '/rtdose.dcm', {}, file_meta=file_meta, preamble="\0"*128)
     
+    #No DICOM object standard. Use only required to avoid error.
+    rtdose.SOPInstanceUID = ds.SOPInstanceUID
+    rtdose.SOPClassUID = '1.2.840.10008.5.1.4.1.1.481.2'
+    rtdose.file_meta.TransferSyntaxUID = ds.file_meta.TransferSyntaxUID
+    rtdose.PatientsName = ds.PatientsName
+    rtdose.PatientID = ds.PatientID
+    rtdose.PatientsBirthDate = ds.PatientsBirthDate
+    rtdose.PatientsSex = ds.PatientsSex
 ##    rtdose.InstanceCreationDate = ds.InstanceCreationDate
 ##    rtdose.InstanceCreationTime = ds.InstanceCreationTime
-    rtdose.SOPInstanceUID = ds.SOPInstanceUID
 ##    rtdose.StudyDate = ds.StudyDate
 ##    rtdose.StudyTime = ds.StudyTime
 ##    rtdose.AccessionNumber = ds.AccessionNumber
 ##    rtdose.Manufacturer = ds.Manufacturer
 ##    rtdose.ReferringPhysiciansName = ds.ReferringPhysiciansName
 ##    rtdose.StationName = ds.StationName
-    rtdose.PatientsName = ds.PatientsName
-    rtdose.PatientID = ds.PatientID
-    rtdose.PatientsBirthDate = ds.PatientsBirthDate
-    rtdose.PatientsSex = ds.PatientsSex
 ##    rtdose.SliceThickness = ds.SliceThickness
 ##    rtdose.SoftwareVersions = ds.SoftwareVersions
-    rtdose.StudyInstanceUID = ds.StudyInstanceUID
-    rtdose.SeriesInstanceUID = ds.SeriesInstanceUID
-    rtdose.StudyID = ds.StudyID
-    rtdose.SeriesNumber = ds.SeriesNumber
-    rtdose.InstanceNumber = ds.InstanceNumber
+##    rtdose.StudyInstanceUID = ds.StudyInstanceUID
+##    rtdose.SeriesInstanceUID = ds.SeriesInstanceUID
+##    rtdose.StudyID = ds.StudyID
+##    rtdose.SeriesNumber = ds.SeriesNumber
+##    rtdose.InstanceNumber = ds.InstanceNumber
     #Image info.
     rtdose.ImagePositionPatient = ds.ImagePositionPatient
     rtdose.ImageOrientationPatient = ds.ImageOrientationPatient
@@ -243,6 +239,5 @@ def copyCTtoRTDose(rtdose,ds,imageRow,imageCol, sliceCount,dgs):
     rtdose.DoseSummationType = 'FRACTION'
     rtdose.GridFrameOffsetVector = list(rtdose.ImagePositionPatient[2]+np.arange(ds.SliceLocation,ds.SliceLocation-sliceCount*ds.SpacingBetweenSlices,-ds.SpacingBetweenSlices))
     rtdose.DoseGridScaling = dgs
-##    del rtdose.ReferencedRTPlans
     
     return rtdose
