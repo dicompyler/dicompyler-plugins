@@ -1,26 +1,32 @@
 # g4dose.py
-"""G4 RT-Dose plugin for dicompyler."""
+# G4 RT-Dose plugin for dicompyler.
 # Copyright (c) 2011 Derek M. Tishler, Brian P. Tonner, and dicompyler contributors.
+"""
+Create RT Dose file from a GEANT4 or GAMOS DICOM phantom RT simulation utilizing
+dose scoring with the GmPSPrinter3ddose or GmPSPrinterG4cout printers.
+"""
 # All rights reserved, released under a BSD license.
 #    See the file license.txt included with this distribution, available at:
 #    http://code.google.com/p/dicompyler-plugins/source/browse/plugins/g4dose/license.txt
 
+#Requires wxPython, pyDicom, numpy, PIL.
 import wx
-from wx.lib.pubsub import Publisher as pub
+from   wx.lib.pubsub import Publisher as pub
 import dicom
-from dicom.dataset import Dataset, FileDataset
+from   dicom.dataset import Dataset, FileDataset
 import os
 import numpy as np
-from PIL import Image
+from   PIL import Image
 import util
+import fnmatch
 
 def pluginProperties():
 
     props = {}
     props['name'] = 'G4 RT-Dose'
-    props['description'] = "Create RT-Dose from a Geant4 DICOM simulation."
-    props['author'] = 'D.M. Tishler & B.P. Tonner'
-    props['version'] = 0.2
+    props['description'] = "View RT-Dose from a Geant4/Gamos DICOM simulation."
+    props['author'] = 'D.M.Tishler & B.P.Tonner'
+    props['version'] = 0.3
     props['documentation'] = 'http://code.google.com/p/dicompyler-plugins/wiki/g4dose'
     props['license'] = 'license.txt'
     props['plugin_type'] = 'menu'
@@ -33,16 +39,19 @@ def pluginProperties():
 class plugin():
 
     def __init__(self, parent):
-
+        
+        #Set subscriptions
         self.parent = parent
         pub.subscribe(self.OnUpdatePatient, 'patient.updated.raw_data')
 
     def OnUpdatePatient(self, msg):
-
+        
+        #Update data from pubsub.
         self.data = msg.data
 
     def addElement(self, tup):
-        #Publish the RT-Dose and rxdose to pubsub.
+        
+        #Publish/broadcast the RT-Dose and rxdose.
         if tup:
             self.data.update({'rtdose':tup[0]})
             self.data.update({'rxdose':tup[1]})
@@ -50,34 +59,136 @@ class plugin():
 
     def pluginMenu(self, evt):
 
-        msg = "Please select the GEANT4 DICOM project folder."
-        loop=True
-        
+        #Temp GUI for file handling.
+        msg  = "Please select Dose File."
+        loop = True
         while loop:
-            loop=False
-            dirdlg = wx.DirDialog(self.parent,msg)
+            loop   = False
+            #Select Dose file & Data.dat
+            dirdlg = wx.FileDialog(self.parent, msg, defaultFile='dicom or 3ddose')
             if dirdlg.ShowModal() == wx.ID_OK:
-                path = dirdlg.GetPath()
+                pathDose   = dirdlg.GetPath()
+                patientDir = os.path.dirname(pathDose)
                 #Confirm G4 simulation input and output files are found.
-                if os.path.isfile(path+"/Data.dat") and os.path.isfile(path+"/dicom.out"):
-                    self.addElement(loadG4DoseGraph(path,self.data['images']))
-                else:
-                    print os.path.isfile(path+"/Data.dat")
-                    print path+"/Data.dat"
-                    print os.path.isfile(path+"/dicom.out")
-                    msg = "Please select the GEANT4 DICOM project folder.\nData.dat + Dicom.out are required!"
-                    loop=True
+                if fnmatch.fnmatch(pathDose, '*3ddose*'):
+                    # Dose file from printer: GmPSPrinter3ddose
+                    #Parse dose file, create RT-Dose DICOM object, broadcast RT-Dose.
+                    self.addElement(loadGamos3ddose(patientDir, pathDose, self.data['images']))
+                    loop = False
+                    break
+                elif fnmatch.fnmatch(pathDose, '*dicom*'):
+                    # Data.dat required for only GmPSPrinterG4cout
+                    msg  = "Please select Data.dat" 
+                    loop2 = True
+                    while loop2:
+                        loop2  = False
+                        #Select Dose file & Data.dat
+                        dirdlg = wx.FileDialog(self.parent,msg)
+                        if dirdlg.ShowModal() == wx.ID_OK:
+                            pathData   = dirdlg.GetPath()
+                            patientDir = os.path.dirname(pathData) 
+                            #Confirm G4 simulation input and output files are found.
+                            if fnmatch.fnmatch(pathData, '*Data.dat'):
+                                loop2 = False
+                                break
+                            else: 
+                                msg  = "Data.dat required!"
+                                loop2 = True
+                        dirdlg.Destroy()
+                    #Parse dose file, create RT-Dose DICOM object, broadcast RT-Dose.
+                    self.addElement(loadG4DoseGraph(patientDir, pathData, pathDose, self.data['images']))
+                    loop = False
+                    break
+                else: 
+                    msg  = "Dose file required."
+                    loop = True
             dirdlg.Destroy()
 
-def loadG4DoseGraph(path,ds):
+#Handle GmPSPrinter3ddose printer output
+def loadGamos3ddose(ptPath, doseFile, ds):
+    
+    #Open DOSXYZ dose file for phantom w/ slices in z dir.
+    DoseFile = open(doseFile,'r')
+    
+    #First line is the number of events
+    NumEvents = float(DoseFile.readline())
+    #Voxels is list [NX, NY, NZ]
+    temp  = DoseFile.readline()  #Get Voxel dimensions
+    temp  = temp.strip('\n')     #Strip linefeed
+    [NX,NY,NZ] = [int(x) for x in temp.split()]
+    #Get the coordinates of the x positions
+    temp  = DoseFile.readline()
+    temp  = temp.strip('\n')
+    XVals =[float(x) for x in temp.split()]
+    #Get the coordinates of the y positions
+    temp  = DoseFile.readline()
+    temp  = temp.strip('\n')
+    YVals = [float(x) for x in temp.split()]
+    #Get the coordinates of the z positions
+    temp  = DoseFile.readline()
+    temp  = temp.strip('\n')
+    ZVals = [float(x) for x in temp.split()]
+
+    #Create and fill 3d dose array.
+    DoseData = np.zeros((NX,NY,NZ),float)
+    for iz in range(0,NZ,1):
+        for iy in range (0,NY,1):
+            #Read in one line of x values
+            temp = DoseFile.readline()
+            temp = temp.strip('\n')
+            row  = temp.split()
+            DoseData[:,iy,iz] = row
+
+    #Image dimensions(Pixels). NY,NX represent voxel image dimensions.
+    imageCol = ds[0].pixel_array.shape[0]
+    imageRow = ds[0].pixel_array.shape[1]
+
+    #Caluculate DGS.
+    Max = np.max(DoseData)
+    doseGridScale = float(Max/65535.)
+    #Set rx dose.
+    rxdose = float(0.90*Max*100.)
+
+    #Copy DoseData array for uncompressing and masking.
+    DDVoxDimImage = np.uint32(DoseData/Max*65535.)*np.ones(np.shape(DoseData),np.uint32)
+    DDImgDimImage = np.ones((NZ,imageRow,imageCol),np.uint32)
+    
+    #Uncompress dose image and position in FFS or HFS. Add more support!
+    if ds[0].PatientPosition == 'FFS':
+        for i in range(NZ):
+            DDImgDimImage[i,:,:] = np.array(Image.frombuffer('I',(NY,NX),DDVoxDimImage[:,:,i].tostring(),'raw','I',0,1)
+                                            .resize((imageCol, imageRow), Image.NEAREST)
+                                            .rotate(-90)
+                                            .transpose(Image.FLIP_LEFT_RIGHT),np.uint32)
+    elif ds[0].PatientPosition == 'HFS':
+        for i in range(NZ):
+            DDImgDimImage[i,:,:] = np.array(Image.frombuffer('I',(NY,NX),DDVoxDimImage[:,:,i].tostring(),'raw','I',0,1)
+                                            .resize((imageCol, imageRow), Image.NEAREST)
+                                            .rotate(-90),np.uint32)
+    else:
+        print("Sorry: Patient Position not yet supported!")
+        guage.Destroy()
+        return
+    
+    #Create RT-Dose File and copy info from CT
+    rtDose = copyCTtoRTDose(ptPath, ds[0], imageRow, imageCol, NZ, doseGridScale)
+        
+    #Store images in pixel_array(int) & Pixel Data(raw).  
+    rtDose.pixel_array = DDImgDimImage
+    rtDose.PixelData = DDImgDimImage.tostring()
+    
+    return rtDose,rxdose
+
+#Handle GmPSPrinterG4cout printer output
+def loadG4DoseGraph(ptPath, dataFile, doseFile, ds):
 
     #Load number of slices and compression value from data.dat.
-    file = open(path+"/Data.dat")
+    file = open(dataFile)
     compression = int(file.readline())
-    sliceCount = int(file.readline())
+    sliceCount  = int(file.readline())
 
     #Load dosegraph from dicom.out
-    doseTable = np.loadtxt(path+"/dicom.out")
+    doseTable   = np.loadtxt(doseFile)
     
     #Exit if simulator had null output.
     if len(doseTable) == 0:
@@ -96,21 +207,20 @@ def loadG4DoseGraph(path,ds):
     #image dimensions from images(DICOM dosegraph object)
     imageCol = ds[0].pixel_array.shape[0]
     imageRow = ds[0].pixel_array.shape[1]
-
-    #G4 compression value error. See documentation.
-    if doseTable[-1][0] > sliceCount*imageCol/compression*imageRow/compression:
-        msgE = 'Compression value error in data.dat!\nPlease delete binary files and re-run GEANT4.'
-        dial = wx.MessageDialog(None, msgE, 'Error', wx.OK | wx.ICON_ERROR)
-        dial.ShowModal()
-        return
-
     #voxel dimensions
     voxelCol = imageCol/compression
     voxelRow = imageRow/compression
-
     #Repeated values.
     voxelDim = voxelCol*voxelRow*sliceCount
-    area = voxelCol*voxelRow
+    area     = voxelCol*voxelRow
+    
+    #G4 compression value error. See documentation.
+    if doseTable[-1][0] > voxelDim:
+        msgE = 'Compression value error in data.dat!\nPlease delete binary files and re-run GEANT4.'
+        dial = wx.MessageDialog(None, msgE, 'Error', wx.OK | wx.ICON_ERROR)
+        dial.ShowModal()
+        guage.Destroy()
+        return
 
     #Store images for resizing.
     imageList = list()
@@ -118,82 +228,91 @@ def loadG4DoseGraph(path,ds):
         imageList.append([])
         imageList[i] = np.zeros((voxelCol,voxelRow),np.uint32)
 
-    #Highest dose value, float.
+    #Create a new rescaled dose table.
     Max = max(doseTable[:, 1])
     #Normalize dose data and prepare for LUT in dicompyler.
-    scaleTable = np.ones((len(doseTable),2),np.uint32)
+    scaleTable = np.ones((len(doseTable),2),np.float32)
     #4294967295,65535,255;2147483647,32767,127
     scaleTable[:, 1] = np.round((doseTable[:, 1]/Max)*65535.)
-    doseTableInt = np.ones((len(doseTable),2),np.uint32)*scaleTable
+    doseTableInt = np.ones((len(doseTable), 2), np.uint32)*np.uint32(scaleTable)
     del scaleTable
-        
-    doseMax =  max(doseTableInt[:, 1])
+
+    #Calculate dose grid scaling for rtdose.
+    doseMax       = max(doseTableInt[:, 1])
     doseGridScale = float(Max/doseMax)
     #Set rx dose.
-    rxdose = float(0.90*Max*100.)
+    rxdose        = float(0.90*Max*100.)
    
-    curRow = 0
-    curSlice = 0
-
+    #Unravel dose table into 3d dose array
     for index, vID in enumerate(doseTable[:, 0]):
-        #Search for corresponding slice.
-        for i in range(curSlice,sliceCount):
-            if vID >= i*area and vID < (i+1)*area:
-                curSlice = i
-                curRow = 0
-                break
-        #Search for corresponding row.
-        for j in range(curRow,voxelRow):
-            #Find the row that vID falls into.
-            if (vID - curSlice*area) >= j*voxelRow and (vID - curSlice*area) < (j+1)*voxelRow:
-                curRow = j
-                break
-        #2xN -> SlicesxRowxCol
-        yShift = curRow
-        xShift = vID - curRow*voxelCol - curSlice*area
-        imageList[curSlice][yShift][xShift] = doseTableInt[index][1]
+        #Unravel the index instead of search. GO NUMPY!
+        newIndex = np.unravel_index(int(vID), (sliceCount, voxelCol, voxelRow))
+        imageList[newIndex[0]][newIndex[1]][newIndex[2]] = doseTableInt[index][1]
         #Update progress bar & check for abort.
         if prog[0]:
-            guageCount+=1
-            prog = guage.Update(guageCount,"Building RT-Dose from GEANT4 simulation\nProcessing slice: {0:n}".format(curSlice+1))
+            guageCount += 1
+            prog = guage.Update(guageCount,"Building RT-Dose from GEANT4 simulation")
         else:
             guage.Destroy()
             return
  
-    imageData = []
     #Convert from list of slices to 3D array of shape (slices, row, col).
     pD3D = np.zeros((sliceCount,imageRow,imageCol),np.uint32)
-    for i in range(sliceCount):
-        imageData.append([])
-        #Use PIL to resize, Voxel to Pixel conversion.
-        imageData[i] = np.array(Image.frombuffer('I',(voxelRow,voxelCol),imageList[i],'raw','I',0,1).resize((imageCol, imageRow), Image.NEAREST),np.uint32)
-        pD3D[i] = imageData[i]
-        if prog[0]:
-            guageCount+=1
-            prog = guage.Update(guageCount,"Building RT-Dose from GEANT4 simulation\nRe-sizing image: {0:n}".format(i+1))
-        else:
-            guage.Destroy()
-            return
+    if ds[0].PatientPosition == 'FFS':
+        for i in range(sliceCount):
+            #Use PIL to resize, Voxel to Pixel conversion.
+            pD3D[i] = np.array(Image.frombuffer('I', (voxelCol, voxelRow), imageList[i], 'raw', 'I', 0, 1)
+                                               .resize((imageCol, imageRow), Image.NEAREST), np.uint32)
+            #Update progress bar & check for abort.
+            if prog[0]:
+                guageCount += 1
+                prog = guage.Update(guageCount,"Building RT-Dose from GEANT4 simulation\nRe-sizing image: {0:n}".format(i+1))
+            else:
+                guage.Destroy()
+                return
+    elif ds[0].PatientPosition == 'HFS':
+        for i in range(sliceCount):
+            #Use PIL to resize, Voxel to Pixel conversion.
+            pD3D[i] = np.array(Image.frombuffer('I', (voxelCol, voxelRow), imageList[i], 'raw', 'I', 0, 1)
+                                               .resize((imageCol, imageRow), Image.NEAREST)
+                                               .transpose(Image.FLIP_LEFT_RIGHT), np.uint32)
+            #Update progress bar & check for abort.
+            if prog[0]:
+                guageCount += 1
+                prog = guage.Update(guageCount,"Building RT-Dose from GEANT4 simulation\nRe-sizing image: {0:n}".format(i+1))
+            else:
+                guage.Destroy()
+                return
+    else:
+        print("Sorry: Patient Position not yet supported!")
+        guage.Destroy()
+        return
 
-    rtDose = copyCTtoRTDose(path, ds[0], imageRow, imageCol, sliceCount, doseGridScale)
+    #Create RT-Dose File and copy info from CT
+    rtDose = copyCTtoRTDose(ptPath, ds[0], imageRow, imageCol, sliceCount, doseGridScale)
         
     #Store images in pixel_array(int) & Pixel Data(raw).  
     rtDose.pixel_array = pD3D
-    rtDose.PixelData = pD3D.tostring()
+    rtDose.PixelData   = pD3D.tostring()
 
     #Close progress bar.
-    guageCount+=1
+    guageCount += 1
     prog = guage.Update(guageCount,"Building RT-Dose from GEANT4 simulation\n")
     guage.Destroy()
     
     return rtDose,rxdose
 
-def copyCTtoRTDose(path,ds,imageRow,imageCol, sliceCount,dgs):
+def copyCTtoRTDose(path, ds, imageRow, imageCol, sliceCount, dgs):
+    
+    # Create a RTDose file for broadcasting.
+    #Create header for RT-Dose object.
     file_meta = Dataset()
     file_meta.MediaStorageSOPClassUID = ds.file_meta.MediaStorageSOPClassUID # CT Image Storage
-    file_meta.MediaStorageSOPInstanceUID = ds.file_meta.MediaStorageSOPInstanceUID # !! Need valid UID here for real work
-    file_meta.ImplementationClassUID = ds.file_meta.ImplementationClassUID # !!! Need valid UIDs here
+    # Needs valid UID
+    file_meta.MediaStorageSOPInstanceUID = ds.file_meta.MediaStorageSOPInstanceUID
+    file_meta.ImplementationClassUID = ds.file_meta.ImplementationClassUID
 
+    #create DICOM RT-Dose object.
     rtdose = FileDataset(path + '/rtdose.dcm', {}, file_meta=file_meta, preamble="\0"*128)
     
     #No DICOM object standard. Use only required to avoid error.
@@ -239,5 +358,15 @@ def copyCTtoRTDose(path,ds,imageRow,imageCol, sliceCount,dgs):
     rtdose.DoseSummationType = 'FRACTION'
     rtdose.GridFrameOffsetVector = list(rtdose.ImagePositionPatient[2]+np.arange(ds.SliceLocation,ds.SliceLocation-sliceCount*ds.SpacingBetweenSlices,-ds.SpacingBetweenSlices))
     rtdose.DoseGridScaling = dgs
+
+    #Saving: Plan tag is required to load saved rtdose file into dicompyler
+##    plan_meta = Dataset()
+##    rtdose.ReferencedRTPlans = []
+##    rtdose.ReferencedRTPlans.append([])
+##    rtdose.ReferencedRTPlans[0] = plan_meta
+##    rtdose.ReferencedRTPlans[0].ReferencedSOPClassUID = 'RT Plan Storage'
+##    rtdose.ReferencedRTPlans[0].ReferencedSOPInstanceUID = '1.2.123.456.78.9.0123.4567.89012345678901'
+    #rtdose.save_as(path + "/RTDose.dcm")
+    #print("Saving '{0:s}'".format(path + "/RTDose.dcm"))
     
     return rtdose
