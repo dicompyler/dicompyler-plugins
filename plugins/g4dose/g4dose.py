@@ -25,8 +25,8 @@ def pluginProperties():
     props = {}
     props['name'] = 'G4 RT-Dose'
     props['description'] = "View RT-Dose from a Geant4/Gamos DICOM simulation."
-    props['author'] = 'D.M.Tishler & B.P.Tonner'
-    props['version'] = 0.3
+    props['author'] = 'D.M. Tishler & B.P. Tonner'
+    props['version'] = 0.4
     props['documentation'] = 'http://code.google.com/p/dicompyler-plugins/wiki/g4dose'
     props['license'] = 'license.txt'
     props['plugin_type'] = 'menu'
@@ -154,21 +154,11 @@ def loadGamos3ddose(ptPath, doseFile, ds):
     DDImgDimImage = np.ones((NZ,imageRow,imageCol),np.uint32)
     
     #Uncompress dose image and position in FFS or HFS. Add more support!
-    if ds[0].PatientPosition == 'FFS':
-        for i in range(NZ):
-            DDImgDimImage[i,:,:] = np.array(Image.frombuffer('I',(NY,NX),DDVoxDimImage[:,:,i].tostring(),'raw','I',0,1)
-                                            .resize((imageCol, imageRow), Image.NEAREST)
-                                            .rotate(-90)
-                                            .transpose(Image.FLIP_LEFT_RIGHT),np.uint32)
-    elif ds[0].PatientPosition == 'HFS':
-        for i in range(NZ):
-            DDImgDimImage[i,:,:] = np.array(Image.frombuffer('I',(NY,NX),DDVoxDimImage[:,:,i].tostring(),'raw','I',0,1)
-                                            .resize((imageCol, imageRow), Image.NEAREST)
-                                            .rotate(-90),np.uint32)
-    else:
-        print("Sorry: Patient Position not yet supported!")
-        guage.Destroy()
-        return
+    for i in range(NZ):
+        DDImgDimImage[i,:,:] = np.array(Image.frombuffer('I',(NY,NX),DDVoxDimImage[:,:,i].tostring(),'raw','I',0,1)
+                                    .resize((imageCol, imageRow), Image.NEAREST)
+                                    .rotate(-90)
+                                    .transpose(Image.FLIP_LEFT_RIGHT),np.uint32)
     
     #Create RT-Dose File and copy info from CT
     rtDose = copyCTtoRTDose(ptPath, ds[0], imageRow, imageCol, NZ, doseGridScale)
@@ -258,35 +248,17 @@ def loadG4DoseGraph(ptPath, dataFile, doseFile, ds):
  
     #Convert from list of slices to 3D array of shape (slices, row, col).
     pD3D = np.zeros((sliceCount,imageRow,imageCol),np.uint32)
-    if ds[0].PatientPosition == 'FFS':
-        for i in range(sliceCount):
-            #Use PIL to resize, Voxel to Pixel conversion.
-            pD3D[i] = np.array(Image.frombuffer('I', (voxelCol, voxelRow), imageList[i], 'raw', 'I', 0, 1)
-                                               .resize((imageCol, imageRow), Image.NEAREST), np.uint32)
-            #Update progress bar & check for abort.
-            if prog[0]:
-                guageCount += 1
-                prog = guage.Update(guageCount,"Building RT-Dose from GEANT4 simulation\nRe-sizing image: {0:n}".format(i+1))
-            else:
-                guage.Destroy()
-                return
-    elif ds[0].PatientPosition == 'HFS':
-        for i in range(sliceCount):
-            #Use PIL to resize, Voxel to Pixel conversion.
-            pD3D[i] = np.array(Image.frombuffer('I', (voxelCol, voxelRow), imageList[i], 'raw', 'I', 0, 1)
-                                               .resize((imageCol, imageRow), Image.NEAREST)
-                                               .transpose(Image.FLIP_LEFT_RIGHT), np.uint32)
-            #Update progress bar & check for abort.
-            if prog[0]:
-                guageCount += 1
-                prog = guage.Update(guageCount,"Building RT-Dose from GEANT4 simulation\nRe-sizing image: {0:n}".format(i+1))
-            else:
-                guage.Destroy()
-                return
-    else:
-        print("Sorry: Patient Position not yet supported!")
-        guage.Destroy()
-        return
+    for i in range(sliceCount):
+        #Use PIL to resize, Voxel to Pixel conversion.
+        pD3D[i] = np.array(Image.frombuffer('I', (voxelCol, voxelRow), imageList[i], 'raw', 'I', 0, 1)
+                                           .resize((imageCol, imageRow), Image.NEAREST), np.uint32)
+        #Update progress bar & check for abort.
+        if prog[0]:
+            guageCount += 1
+            prog = guage.Update(guageCount,"Building RT-Dose from GEANT4 simulation\nRe-sizing image: {0:n}".format(i+1))
+        else:
+            guage.Destroy()
+            return
 
     #Create RT-Dose File and copy info from CT
     rtDose = copyCTtoRTDose(ptPath, ds[0], imageRow, imageCol, sliceCount, doseGridScale)
@@ -356,7 +328,16 @@ def copyCTtoRTDose(path, ds, imageRow, imageCol, sliceCount, dgs):
     rtdose.DoseUnits = 'GY'
     rtdose.DoseType = 'PHYSICAL'
     rtdose.DoseSummationType = 'FRACTION'
-    rtdose.GridFrameOffsetVector = list(rtdose.ImagePositionPatient[2]+np.arange(ds.SliceLocation,ds.SliceLocation-sliceCount*ds.SpacingBetweenSlices,-ds.SpacingBetweenSlices))
+    if not ds.has_key('SpacingBetweenSlices'):
+        ds.SpacingBetweenSlices = ds.SliceThickness
+    if ds.PatientPosition == 'FFS':
+        rtdose.GridFrameOffsetVector = list(rtdose.ImagePositionPatient[2]+np.arange(ds.SliceLocation,ds.SliceLocation-sliceCount*ds.SpacingBetweenSlices,-ds.SpacingBetweenSlices))
+    elif ds.PatientPosition == 'HFS':        
+        rtdose.GridFrameOffsetVector = list(rtdose.ImagePositionPatient[2]-np.arange(ds.SliceLocation,ds.SliceLocation+sliceCount*ds.SpacingBetweenSlices,ds.SpacingBetweenSlices))
+    else:
+        print("Sorry: Patient Position not yet supported!")
+        guage.Destroy()
+        return    
     rtdose.DoseGridScaling = dgs
 
     #Saving: Plan tag is required to load saved rtdose file into dicompyler
