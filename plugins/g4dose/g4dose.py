@@ -1,6 +1,6 @@
 # g4dose.py
 # G4 RT-Dose plugin for dicompyler.
-# Copyright (c) 2011 Derek M. Tishler, Brian P. Tonner, and dicompyler contributors.
+# Copyright (c) 2011-2012 Derek M. Tishler, Brian P. Tonner, and dicompyler contributors.
 """
 Create RT Dose file from a GEANT4 or GAMOS DICOM phantom RT simulation utilizing
 dose scoring with the GmPSPrinter3ddose or GmPSPrinterG4cout printers.
@@ -9,7 +9,7 @@ dose scoring with the GmPSPrinter3ddose or GmPSPrinterG4cout printers.
 #    See the file license.txt included with this distribution, available at:
 #    http://code.google.com/p/dicompyler-plugins/source/browse/plugins/g4dose/license.txt
 
-#Requires wxPython, pyDicom, numpy, PIL.
+#Requires wxPython, pyDicom, numpy, PIL, dicompyler.
 import wx
 from   wx.lib.pubsub import Publisher as pub
 import dicom
@@ -17,8 +17,10 @@ from   dicom.dataset import Dataset, FileDataset
 import os
 import numpy as np
 from   PIL import Image
-import util
+from dicompyler import guiutil, util
 import fnmatch
+import logging
+logger = logging.getLogger('dicompyler.g4dose')
 
 def pluginProperties():
 
@@ -310,7 +312,6 @@ def copyCTtoRTDose(path, ds, imageRow, imageCol, sliceCount, dgs):
 ##    rtdose.StudyID = ds.StudyID
 ##    rtdose.SeriesNumber = ds.SeriesNumber
 ##    rtdose.InstanceNumber = ds.InstanceNumber
-    #Image info.
     rtdose.ImagePositionPatient = ds.ImagePositionPatient
     rtdose.ImageOrientationPatient = ds.ImageOrientationPatient
     rtdose.FrameofReferenceUID = ds.FrameofReferenceUID
@@ -331,23 +332,15 @@ def copyCTtoRTDose(path, ds, imageRow, imageCol, sliceCount, dgs):
     if not ds.has_key('SpacingBetweenSlices'):
         ds.SpacingBetweenSlices = ds.SliceThickness
     if ds.PatientPosition == 'FFS':
-        rtdose.GridFrameOffsetVector = list(rtdose.ImagePositionPatient[2]+np.arange(ds.SliceLocation,ds.SliceLocation-sliceCount*ds.SpacingBetweenSlices,-ds.SpacingBetweenSlices))
+        #CFor compliance with dicompyler update r57d9155cc415 for slice ordering.
+        rtdose.GridFrameOffsetVector = list(rtdose.ImagePositionPatient[2]+np.arange(ds.SliceLocation,ds.SliceLocation+sliceCount*ds.SpacingBetweenSlices,ds.SpacingBetweenSlices))
     elif ds.PatientPosition == 'HFS':        
         rtdose.GridFrameOffsetVector = list(rtdose.ImagePositionPatient[2]-np.arange(ds.SliceLocation,ds.SliceLocation+sliceCount*ds.SpacingBetweenSlices,ds.SpacingBetweenSlices))
     else:
-        print("Sorry: Patient Position not yet supported!")
+        logger.warning("Sorry: Patient Position not yet supported in G4Dose\nCould Not create GridFrameOffsetVector for RT!")
         guage.Destroy()
-        return    
+        return
+    #Scaling from int to physical dose
     rtdose.DoseGridScaling = dgs
-
-    #Saving: Plan tag is required to load saved rtdose file into dicompyler
-##    plan_meta = Dataset()
-##    rtdose.ReferencedRTPlans = []
-##    rtdose.ReferencedRTPlans.append([])
-##    rtdose.ReferencedRTPlans[0] = plan_meta
-##    rtdose.ReferencedRTPlans[0].ReferencedSOPClassUID = 'RT Plan Storage'
-##    rtdose.ReferencedRTPlans[0].ReferencedSOPInstanceUID = '1.2.123.456.78.9.0123.4567.89012345678901'
-    #rtdose.save_as(path + "/RTDose.dcm")
-    #print("Saving '{0:s}'".format(path + "/RTDose.dcm"))
     
     return rtdose
