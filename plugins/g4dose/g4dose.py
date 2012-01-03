@@ -26,7 +26,7 @@ def pluginProperties():
 
     props = {}
     props['name'] = 'G4 RT-Dose'
-    props['description'] = "View RT-Dose from a Geant4/Gamos DICOM simulation."
+    props['description'] = "View RT-Dose from a Geant4/Gamos DICOM simulation"
     props['author'] = 'D.M. Tishler & B.P. Tonner'
     props['version'] = 0.4
     props['documentation'] = 'http://code.google.com/p/dicompyler-plugins/wiki/g4dose'
@@ -163,11 +163,7 @@ def loadGamos3ddose(ptPath, doseFile, ds):
                                     .transpose(Image.FLIP_LEFT_RIGHT),np.uint32)
     
     #Create RT-Dose File and copy info from CT
-    rtDose = copyCTtoRTDose(ptPath, ds[0], imageRow, imageCol, NZ, doseGridScale)
-        
-    #Store images in pixel_array(int) & Pixel Data(raw).  
-    rtDose.pixel_array = DDImgDimImage
-    rtDose.PixelData = DDImgDimImage.tostring()
+    rtDose = copyCTtoRTDose(ptPath, ds[0], DDImgDimImage, imageRow, imageCol, NZ, doseGridScale)
     
     return rtDose,rxdose
 
@@ -263,11 +259,7 @@ def loadG4DoseGraph(ptPath, dataFile, doseFile, ds):
             return
 
     #Create RT-Dose File and copy info from CT
-    rtDose = copyCTtoRTDose(ptPath, ds[0], imageRow, imageCol, sliceCount, doseGridScale)
-        
-    #Store images in pixel_array(int) & Pixel Data(raw).  
-    rtDose.pixel_array = pD3D
-    rtDose.PixelData   = pD3D.tostring()
+    rtDose = copyCTtoRTDose(ptPath, ds[0], pD3D, imageRow, imageCol, sliceCount, doseGridScale)
 
     #Close progress bar.
     guageCount += 1
@@ -276,7 +268,7 @@ def loadG4DoseGraph(ptPath, dataFile, doseFile, ds):
     
     return rtDose,rxdose
 
-def copyCTtoRTDose(path, ds, imageRow, imageCol, sliceCount, dgs):
+def copyCTtoRTDose(path, ds, doseData, imageRow, imageCol, sliceCount, dgs):
     
     # Create a RTDose file for broadcasting.
     #Create header for RT-Dose object.
@@ -332,7 +324,8 @@ def copyCTtoRTDose(path, ds, imageRow, imageCol, sliceCount, dgs):
     if not ds.has_key('SpacingBetweenSlices'):
         ds.SpacingBetweenSlices = ds.SliceThickness
     if ds.PatientPosition == 'FFS':
-        #CFor compliance with dicompyler update r57d9155cc415 for slice ordering.
+        #For compliance with dicompyler update r57d9155cc415 which uses a reverssed slice ordering.
+        doseData = doseData[::-1]
         rtdose.GridFrameOffsetVector = list(rtdose.ImagePositionPatient[2]+np.arange(ds.SliceLocation,ds.SliceLocation+sliceCount*ds.SpacingBetweenSlices,ds.SpacingBetweenSlices))
     elif ds.PatientPosition == 'HFS':        
         rtdose.GridFrameOffsetVector = list(rtdose.ImagePositionPatient[2]-np.arange(ds.SliceLocation,ds.SliceLocation+sliceCount*ds.SpacingBetweenSlices,ds.SpacingBetweenSlices))
@@ -342,5 +335,9 @@ def copyCTtoRTDose(path, ds, imageRow, imageCol, sliceCount, dgs):
         return
     #Scaling from int to physical dose
     rtdose.DoseGridScaling = dgs
+
+    #Store images in pixel_array(int) & Pixel Data(raw).  
+    rtdose.pixel_array = doseData
+    rtdose.PixelData   = doseData.tostring()
     
     return rtdose
