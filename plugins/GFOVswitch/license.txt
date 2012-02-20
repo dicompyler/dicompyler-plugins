@@ -1,5 +1,5 @@
 ﻿
-Copyright (c) 2011-2012, Derek M. Tishler, Brian P. Tonner, and dicompyler contributors
+Copyright (c) 2011-2012, Derek M. Tishler and dicompyler contributors
 
 All rights reserved.
 
@@ -14,7 +14,7 @@ are met:
 	this list of conditions and the following disclaimer in the documentation 
 	and/or other materials provided with the distribution.
 
-	The names Derek M. Tishler, Brian P. Tonner may not be used to endorse or 
+	The names Derek M. Tishler may not be used to endorse or 
 	promote products derived from this software without specific prior 
 	written permission.
 
@@ -31,11 +31,11 @@ POSSIBILITY OF SUCH DAMAGE.
 
 --------------------------------------------------------------------------------
 
-G4 RT-Dose uses the following libraries:
+GFOVswitch uses the following libraries:
 
 --------------------------------------------------------------------------------
 
-G4 RT-Dose uses pydicom:
+GFOVswitch uses pydicom:
 Copyright (c) 2008-2010 Darcy Mason and pydicom contributors
 
 They are distributed under the MIT License as follows:
@@ -60,7 +60,7 @@ THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 
-G4 RT-Dose uses NumPy, which is distributed under the New BSD license:
+GFOVswitch uses NumPy, which is distributed under the New BSD license:
 
 Copyright (c) 2005, NumPy Developers
 
@@ -96,35 +96,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 --------------------------------------------------------------------------------
 
-G4 RT-Dose uses the Python Imaging Library (PIL):
-
-    Copyright © 1997-2011 by Secret Labs AB
-    Copyright © 1995-2011 by Fredrik Lundh
-
-By obtaining, using, and/or copying this software and/or its associated 
-documentation, you agree that you have read, understood, and will comply 
-with the following terms and conditions:
-
-	Permission to use, copy, modify, and distribute this software 
-	and its associated documentation for any purpose and without 
-	fee is hereby granted, provided that the above copyright notice 
-	appears in all copies, and that both that copyright notice and 
-	this permission notice appear in supporting documentation, and 
-	that the name of Secret Labs AB or the author not be used in 
-	advertising or publicity pertaining to distribution of the software 
-	without specific, written prior permission.
-
-SECRET LABS AB AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS 
-SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS. 
-IN NO EVENT SHALL SECRET LABS AB OR THE AUTHOR BE LIABLE FOR ANY SPECIAL, 
-INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM 
-LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE 
-OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR 
-PERFORMANCE OF THIS SOFTWARE.
-
---------------------------------------------------------------------------------
-
-G4 RT-Dose uses Python, which is distributed under the following license:
+GFOVswitch uses Python, which is distributed under the following license:
 
 PYTHON SOFTWARE FOUNDATION LICENSE VERSION 2
 --------------------------------------------
@@ -177,7 +149,7 @@ Agreement.
 
 --------------------------------------------------------------------------------
 
-G4 RT-Dose uses wxPython, which is distributed under the following license:
+GFOVswitch uses wxPython, which is distributed under the following license:
 
                 wxWindows Library Licence, Version 3.1
                 ======================================
