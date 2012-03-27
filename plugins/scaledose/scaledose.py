@@ -2,7 +2,7 @@
 # -*- coding: ISO-8859-1 -*-
 # scaledose.py
 """dicompyler plugin that scales DICOM RT Dose data."""
-# Copyright (c) 2010-2011 Aditya Panchal
+# Copyright (c) 2010-2012 Aditya Panchal
 # This file is part of dicompyler, released under a BSD license.
 #    See the file license.txt included with this distribution, also
 #    available at http://code.google.com/p/dicompyler/
@@ -12,7 +12,7 @@ import wx
 from wx.xrc import XmlResource, XRCCTRL, XRCID
 from wx.lib.pubsub import Publisher as pub
 import os.path, threading
-import guiutil, util
+from dicompyler import guiutil, util
 
 def pluginProperties():
     """Properties of the plugin."""
@@ -21,7 +21,7 @@ def pluginProperties():
     props['name'] = 'Scale Dose'
     props['description'] = "Scales DICOM RT dose data"
     props['author'] = 'Aditya Panchal'
-    props['version'] = 0.1
+    props['version'] = 0.2
     props['plugin_type'] = 'menu'
     props['plugin_version'] = 1
     props['min_dicom'] = ['rtplan', 'rtdose']
