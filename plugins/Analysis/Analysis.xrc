@@ -106,7 +106,7 @@
                                     <object class="sizeritem">
                                         <flag>wxALIGN_CENTER_HORIZONTAL|wxALIGN_CENTER_VERTICAL</flag>
                                         <object class="wxStaticText" name="label_8">
-                                            <label>Plan value (Gy)</label>
+                                            <label>Plan value (cc)</label>
                                             <font>
                                                 <style>normal</style>
                                                 <family>default</family>
