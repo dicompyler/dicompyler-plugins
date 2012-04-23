@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="ISO-8859-1"?>
 <resource>
-  <object class="wxPanel" name="pluginConformality" subclass="Conformality.plugin">
+  <object class="wxDialog" name="ConformalityPanel" subclass="SRSConformality.Conformality.ConformalityPanel">
     <object class="wxBoxSizer">
       <object class="sizeritem">
         <object class="wxBoxSizer">
