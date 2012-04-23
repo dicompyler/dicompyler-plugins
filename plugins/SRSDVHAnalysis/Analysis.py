@@ -42,7 +42,6 @@ class plugin:
         self.parent = parent
         
         # Set up pubsub
-        #pub.subscribe(self.OnUpdatePatient, 'patient.updated.raw_data')
         pub.subscribe(self.OnUpdatePatient, 'patient.updated.parsed_data')     
 
         # Load the XRC file for our gui resources
@@ -62,15 +61,8 @@ class plugin:
         panelAnalysis.Init(self.data['structures'], self.data['dvhs'])
         panelAnalysis.ShowModal()
         
-
-        #self.tools.append({'label':"Tracker", 'bmp':trackerbmp, 'shortHelp':"Send to Tracker", 'eventhandler':self.SendToTracker})
-        #self.tools.append({'label':"Report", 'bmp':reportbmp, 'shortHelp':"Print out a report", 'eventhandler':self.PrintReport})
-        
-        # Set up preferences
-        
         # Set up pubsub
-        #pub.subscribe(self.OnUpdatePatient, 'patient.updated.raw_data')
-        pub.subscribe(self.OnUpdatePatient, 'patient.updated.parsed_data') 
+        #pub.subscribe(self.OnUpdatePatient, 'patient.updated.parsed_data') 
         
         return panelAnalysis
          
@@ -98,10 +90,8 @@ class AnalysisPanel(wx.Dialog):
         self.dvhs = dvhs
        
         # Setup toolbar controls
-        #trackerbmp = wx.Bitmap(util.GetResourcePath('tracker.png'))
-        #reportbmp = wx.Bitmap(util.GetResourcePath('report.png'))
         #drawingstyles = ['Solid', 'Transparent', 'Dot', 'Dash', 'Dot Dash']
-        self.tools = []
+        #self.tools = []
         
         # Initialize the Analysis fractionation control and labels
         self.lblFractions = XRCCTRL(self, 'lblFractions')
@@ -352,7 +342,7 @@ class AnalysisPanel(wx.Dialog):
         sh = wb.sheet_by_name(u'tolerances')
             
         #Convert Renal Hilum to percentage for visualization only
-        #(will be set back to a ratio in the FindPlanRenalHilum)
+        #(will be used as a ratio in the FindPlanRenalHilum)
         self.ratioRenalHilum = str(sh.cell(18,1).value)
         self.percentageRenalHilum = str(sh.cell(18,1).value * 100) + '%'           
             
@@ -374,11 +364,14 @@ class AnalysisPanel(wx.Dialog):
         self.volSkin.SetValue(str(sh.cell(15,1).value))
         self.volStomach.SetValue(str(sh.cell(16,1).value))
         self.volBowel.SetValue(str(sh.cell(17,1).value))
-        self.volRenalHilum.SetValue(self.percentageRenalHilum)  ##
-        self.limitLungs1.SetValue(str(sh.cell(19,1).value))
-        self.limitLungs2.SetValue(str(sh.cell(20,1).value))
-        self.limitLiver.SetValue(str(sh.cell(21,1).value))
-        self.limitRenalCortex.SetValue(str(sh.cell(22,1).value))
+        self.volRenalHilum.SetValue(self.percentageRenalHilum)
+        # Added a ">" sign for clarity; for critical volume structures
+        # you want plan value to be greater than limit volume as it is a
+        # parallel tissue.
+        self.limitLungs1.SetValue('> ' + str(sh.cell(19,1).value))
+        self.limitLungs2.SetValue('> ' + str(sh.cell(20,1).value))
+        self.limitLiver.SetValue('> ' + str(sh.cell(21,1).value))
+        self.limitRenalCortex.SetValue('> ' + str(sh.cell(22,1).value))
         
         # Look up tolerance doses
         self.limitOptic.SetValue(str(sh.cell(1,lookup).value))
@@ -759,7 +752,8 @@ class AnalysisPanel(wx.Dialog):
         
     def FindPlanRenalHilum(self, evt=None):
         # Read explanation in ReadTolerances; was changed from ratio (.666)
-        # to 66.6% for visualization.  Set that back here.
+        # to string '66.6%' for visualization.  Uses 0.666 here.
+        # GetDoseConstraint() needs it as 66.6.
 
         if (evt == None):
             self.choiceRenalHilum.SetSelection(0)
@@ -769,8 +763,7 @@ class AnalysisPanel(wx.Dialog):
         id = self.choiceRenalHilum.GetClientData(choiceItem)
         if id > 0:   #exclude '-'
             self.dvhdata[id] = dvhdata.DVH(self.dvhs[id])
-            #total_vol = dvhdata.CalculateVolume(self.structures[id])
-            Vol = float(self.ratioRenalHilum)*100
+            Vol = float(self.ratioRenalHilum)*100  # 0.666 becomes 66.6
             dose = self.dvhdata[id].GetDoseConstraint(Vol)
             dose = str(dose/100)   # Dose from DVH is in cGy
             self.planRenalHilum.SetValue(dose)  
@@ -827,5 +820,3 @@ class AnalysisPanel(wx.Dialog):
             crit_vol = total_vol - constraint
             crit_vol = str(round(crit_vol,1))
             self.planRenalCortex.SetValue(crit_vol)       
-        
-    
