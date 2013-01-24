@@ -1,20 +1,14 @@
 #!/usr/bin/env python
 # -*- coding: ISO-8859-1 -*-
 # Analysis.py
-"""dicompyler plugin that calculates congruence between selected structure and an isodose line."""
+"""Dicompyler plugin that determines whether a plan meets or fails the 
+   constraints of the TG-101 report."""
 
 import os.path
 import wx
 from wx.xrc import XmlResource, XRCCTRL, XRCID
 from wx.lib.pubsub import Publisher as pub
-#from matplotlib import _cntr as cntr
-#from matplotlib import __version__ as mplversion
-#import matplotlib.nxutils as nx
-#import numpy.ma as ma
-#import numpy as np
-#from dicompyler import guiutil, util
 from dicompyler import dvhdata
-#from dicompyler.dicomparser import DicomParser as dp
 
 def pluginProperties():
     """Properties of the plugin."""
@@ -28,7 +22,6 @@ def pluginProperties():
     props['plugin_version'] = 1
     props['min_dicom'] = ['rtss', 'rtdose']
     props['recommended_dicom'] = ['rtss', 'rtdose', 'rtss', 'images']
-
     return props
 
 class plugin:
@@ -56,11 +49,7 @@ class plugin:
         panelAnalysis = self.res.LoadDialog(self.parent, "AnalysisPanel")
         panelAnalysis.SetTitle("TG-101 Stereotactic Plan Analysis")
         panelAnalysis.Init(self.data['structures'], self.data['dvhs'])
-        panelAnalysis.ShowModal()
-        
-        # Set up pubsub
-        #pub.subscribe(self.OnUpdatePatient, 'patient.updated.parsed_data') 
-        
+        panelAnalysis.ShowModal() 
         return panelAnalysis
          
     def OnDestroy(self, evt):
@@ -139,7 +128,7 @@ class AnalysisPanel(wx.Dialog):
                                   'choiceCochlea':      ['cochlea'],
                                   'choiceBrainstem':    ['brainstem'],
                                   'choiceSpinal':       ['spinal cord', 'cord'],
-                                  'choiceCauda':        ['cauda', 'caude equina'],
+                                  'choiceCauda':        ['cauda', 'cauda equina'],
                                   'choiceEsophagus':    ['esophagus'],  
                                   'choiceBrachial':     ['brachial plexus'],
                                   'choiceHeart':        ['heart'],
@@ -210,21 +199,39 @@ class AnalysisPanel(wx.Dialog):
         # Doses defined per fraction/Organ (Critical Volume/Threshold organs)
         # NOTE: Lungs, Liver, and RenalCortex are actually THRESHOLDS (in Gy),
         #       NOT volumes.  This was only done for a simpler for_loop.
-        #       See columns on GUI.        
-        for i, organName in self.volDict.iteritems():                   # Look up GUI Column 2 values                          
+        #       See columns on GUI. 
+        
+        # Look up GUI Column 2 values   
+        for i, organName in self.volDict.iteritems():                                          
             volName = 'vol' + organName
             setattr(self, volName, XRCCTRL(self, volName))        
         
-        # Define structure lists (choices) and dose limits (in cGy) for each organ/fractionation
-        for choiceName, organList in self.widgetDict.iteritems():   # i.e. ['Optic', 'OpticMax']
-            setattr(self, choiceName, XRCCTRL(self, choiceName))      # structure lists (choices) i.e. self.choiceOptic
+        # Define structure lists (choices) and dose limits (in cGy) for organ
+        for choiceName, organList in self.widgetDict.iteritems():   
+            #i.e. self.choiceOptic (combobox)
+            setattr(self, choiceName, XRCCTRL(self, choiceName))      
             for organName in organList:   
-                limitName = 'limit' + organName                        # TG limit values  i.e. 'limitOptic'         
-                planName = 'plan' + organName                          # Dose values obtained from plan in Dicompyler i.e. 'planOptic' 
-                imgName = 'img' + organName                 #Image box indicator that initializes with a transparent.png image i.e. 'imgOptic'
-                setattr(self, limitName, XRCCTRL(self, limitName))      # i.e. self.limitOptic
-                setattr(self, planName, XRCCTRL(self, planName))      # i.e. self.planOptic
-                setattr(self, imgName, XRCCTRL(self, imgName))        # i.e. self.imgOptic
+                limitName = 'limit' + organName # TG limit values         
+                planName = 'plan' + organName   # Dose values obtained from plan
+                imgName = 'img' + organName     #Image box indicator
+                # i.e. self.limitOptic
+                setattr(self, limitName, XRCCTRL(self, limitName))      
+                # i.e. self.planOptic
+                setattr(self, planName, XRCCTRL(self, planName))      
+                # i.e. self.imgOptic
+                setattr(self, imgName, XRCCTRL(self, imgName))        
+                
+        img = os.path.join(os.path.dirname(__file__), 'transparent.png') 
+        img = wx.Image(img, wx.BITMAP_TYPE_ANY)
+        self.imgTransparent = wx.BitmapFromImage(img) 
+        
+        img = os.path.join(os.path.dirname(__file__), 'check.png') 
+        img = wx.Image(img, wx.BITMAP_TYPE_ANY)
+        self.imgCheck = wx.BitmapFromImage(img) 
+
+        img = os.path.join(os.path.dirname(__file__), 'flag.png') 
+        img = wx.Image(img, wx.BITMAP_TYPE_ANY)
+        self.imgFlag = wx.BitmapFromImage(img)         
         
         # Bind ui events to the proper methods
         wx.EVT_COMBOBOX(self, XRCID('choiceFractions'), self.ReadTolerances)
@@ -248,7 +255,6 @@ class AnalysisPanel(wx.Dialog):
         wx.EVT_COMBOBOX(self, XRCID('choiceLungs'), self.OnComboOrgan)
         wx.EVT_COMBOBOX(self, XRCID('choiceLiver'), self.OnComboOrgan)
         wx.EVT_COMBOBOX(self, XRCID('choiceRenalCortex'), self.OnComboOrgan)
-        #self.Bind(wx.EVT_WINDOW_DESTROY, self.OnDestroy)
   
         self.SetStructureChoices() 
         self.InitialGuessCombobox()
@@ -273,24 +279,29 @@ class AnalysisPanel(wx.Dialog):
         else:
             self.EnableChoices()
             self.ResetImgs()
-            for i, organName in self.volDict.iteritems():                   # Look up GUI Column 2 values                          
-                if hasattr(self, 'vol' + organName) == True:                # exclude max points in column 2       
+            # Look up GUI Column 2 values   
+            for i, organName in self.volDict.iteritems():     
+                # exclude max points in column 2                      
+                if hasattr(self, 'vol' + organName) == True:                      
                     VolObject = getattr(self, 'vol' + organName)  
                     tolerance = getattr(self, 'tolerance' + organName)
-                    if type(tolerance[0]) != str:                     # All except hilum and parallel organs
+                    # All except hilum and parallel organs
+                    if type(tolerance[0]) != str:                     
                         VolObject.SetValue(str(tolerance[0]))         
-                    if type(tolerance[0]) == str:                     # hilum and lungs
-                        if '%' in tolerance[0]:                       # hilum
-                            s = tolerance[0]                                          # i.e. '66.6%' -> 0.666
-                            setattr(self, 'ratio' + organName, float(s.rstrip('%')) / 100)               # i.e. self.ratioRenalHilum
-                            setattr(self, 'percentage' + organName, s)   # i.e. self.percentageRenalHilum
-                            VolObject.SetValue(s)                      # i.e. self.volRenalHilum
-                        if '>' in tolerance[0]:              # lungs
-                            VolObject.SetValue(str(tolerance[FractionID]))        
-            for choiceName, organList in self.widgetDict.iteritems():       # Look up GUI Column 3 values                                        
-                for organName in organList:                                 # i.e. 'Optic, OpticMax' 
-                    tolerance = getattr(self, 'tolerance' + organName)      # i.e. 'self.toleranceOptic'                                            
-                    LimitObject = getattr(self, 'limit' + organName)        # i.e. self.limitOptic
+                    if type(tolerance[0]) == str:        # hilum and lungs
+                        if '%' in tolerance[0]:          # hilum
+                            s = tolerance[0]             # i.e. '66.6%' -> 0.666
+                            setattr(self, 'ratio' + organName,
+                                    float(s.rstrip('%')) / 100)            
+                            setattr(self, 'percentage' + organName, s)   
+                            VolObject.SetValue(s)                     
+                        if '>' in tolerance[0]:          # lungs
+                            VolObject.SetValue(str(tolerance[FractionID]))    
+            # Look up GUI Column 3 values                
+            for choiceName, organList in self.widgetDict.iteritems():                                               
+                for organName in organList:                                 
+                    tolerance = getattr(self, 'tolerance' + organName)                                                 
+                    LimitObject = getattr(self, 'limit' + organName)       
                     if type(tolerance[0]) != str:
                         LimitObject.SetValue(str(tolerance[FractionID]))
                     if type(tolerance[0]) == str:
@@ -300,30 +311,33 @@ class AnalysisPanel(wx.Dialog):
                             LimitObject.SetValue(tolerance[0])    
         
             # Autopopulate the preset structures, if found by name
-            for choiceName, organList in self.widgetDict.iteritems():           # i.e. ['Optic', 'OpticMax']    
-                ChoiceObject = getattr(self, choiceName)                        # i.e. self.choiceOptic
+            for choiceName, organList in self.widgetDict.iteritems():           
+                ChoiceObject = getattr(self, choiceName)                        
                 CurrentChoiceObject = ChoiceObject.GetCurrentSelection()
-                if CurrentChoiceObject > 0:                                         # ignore choice(0) = ''
-                    for organName in organList:                                     # i.e. 'Optic'     
+                if CurrentChoiceObject > 0:              # ignore choice(0) = ''
+                    for organName in organList:                                         
                         self.FindOrganPlan(ChoiceObject.GetClientData(CurrentChoiceObject), organName)
 
     def SetStructureChoices(self):
-        """Populate the structure list."""
-        # Reinitialize the lists; will have double the entries if not
-        choiceList = self.widgetDict.keys()             # i.e. ['choiceOptic', 'choiceCochlea', ...]
-        for choiceName in choiceList:                   # i.e. 'choiceOptic'
-            choiceObject = getattr(self, choiceName)    # i.e. self.choiceOptic
-            choiceObject.Clear()                        # i.e. self.choiceOptic.Enable()
+        """Reinitialize the lists; will have double the entries if not."""
+
+        choiceList = self.widgetDict.keys()            
+        for choiceName in choiceList:                  
+            choiceObject = getattr(self, choiceName)  
+            choiceObject.Clear()                        
             choiceObject.Append('')                     # Pad the first item       
             for id, structure in self.structures.iteritems(): 
                 i = choiceObject.Append(structure['name'])
                 choiceObject.SetClientData(i, id)            
             
     def InitialGuessCombobox(self):
-        for choiceName, guessList in self.initialGuessDict.iteritems():                     # i.e. ['skin', 'skin (0.5cm)']    
-            ChoiceObject = getattr(self, choiceName)                                        # i.e. self.choiceSkin
-            for i in range(ChoiceObject.GetCount()):                                        # combobox list ['', 'Optic', 'Skin', ...]                  
-                if self.KeywordsInCombobox(ChoiceObject.GetString(i), guessList) == True:              
+        # i.e. ['skin', 'skin (0.5cm)']
+        for choiceName, guessList in self.initialGuessDict.iteritems():                         
+            ChoiceObject = getattr(self, choiceName)   
+            # combobox list ['', 'Optic', 'Skin', ...]                         
+            for i in range(ChoiceObject.GetCount()):                                                          
+                if self.KeywordsInCombobox(ChoiceObject.GetString(i), 
+                                           guessList) == True:              
                     ChoiceObject.SetSelection(i)
     
     def KeywordsInCombobox(self, comboboxString, guessList):
@@ -335,81 +349,73 @@ class AnalysisPanel(wx.Dialog):
         # NOTE: Lungs, Liver, and RenalCortex are actually THRESHOLDS (in Gy),
         #       NOT volumes.  This was only done for a simpler for_loop.
         #       See columns on GUI.
-        for choiceName, organList in self.widgetDict.iteritems():   # i.e. ['Optic', 'OpticMax']
-            for organName in organList:                             # i.e. 'Optic'      
-                if hasattr(self, 'vol' + organName) == True:        # exclude statictext = max point                   
-                    VolObject = getattr(self, 'vol' + organName)    # i.e. self.volOptic
+        for choiceName, organList in self.widgetDict.iteritems():   
+            for organName in organList:                                  
+                if hasattr(self, 'vol' + organName) == True:                           
+                    VolObject = getattr(self, 'vol' + organName)    
                     VolObject.Clear()
     
-    def ResetLimitValues(self):                                     # not event based; do for all in dict
-        for choiceName, organList in self.widgetDict.iteritems():   # i.e. ['Optic', 'OpticMax']
-            for organName in organList:                             # i.e. 'Optic'                                            
-                LimitObject = getattr(self, 'limit' + organName)    # i.e. self.limitOptic
+    def ResetLimitValues(self):                                     
+        for choiceName, organList in self.widgetDict.iteritems():   
+            for organName in organList:                                                                 
+                LimitObject = getattr(self, 'limit' + organName)    
                 LimitObject.Clear()
      
-    def ResetPlanValues(self):                                      # not event based; do for all in dict
-        for choiceName, organList in self.widgetDict.iteritems():   # i.e. ['Optic', 'OpticMax']
-            for organName in organList:                             # i.e. 'Optic'                                         
-                PlanObject = getattr(self, 'plan' + organName)      # i.e. self.planOptic
+    def ResetPlanValues(self):                                      
+        for choiceName, organList in self.widgetDict.iteritems():   
+            for organName in organList:                                                               
+                PlanObject = getattr(self, 'plan' + organName)      
                 PlanObject.Clear()
 
     def ResetImgs(self):
-        for choiceName, organList in self.widgetDict.iteritems():   # i.e. ['Optic', 'OpticMax']
-            for organName in organList:                             # i.e. 'Optic'                     
-                ImgObject = getattr(self, 'img' + organName)        # i.e. self.imgOptic
-                ImgObject.SetBitmap(self.GetBitmap('transparent.png'))
+        for choiceName, organList in self.widgetDict.iteritems():   
+            for organName in organList:                     
+                ImgObject = getattr(self, 'img' + organName)        
+                ImgObject.SetBitmap(self.imgTransparent)
         
     def EnableChoices(self):
-        choiceList = self.widgetDict.keys()     # i.e. ['choiceOptic', 'choiceCochlea', ...]
-        for choiceName in choiceList:                   # i.e. 'choiceOptic'
-            choiceObject = getattr(self, choiceName)    # i.e. self.choiceOptic
-            choiceObject.Enable()                       # i.e. self.choiceOptic.Enable()
+        choiceList = self.widgetDict.keys()     
+        for choiceName in choiceList:                   
+            choiceObject = getattr(self, choiceName)    
+            choiceObject.Enable()                       
         
     def DisableChoices(self):
-        choiceList = self.widgetDict.keys()      # i.e. ['choiceOptic', 'choiceCochlea', ...]
-        for choiceName in choiceList:                    # i.e. 'choiceOptic'
-            choiceObject = getattr(self, choiceName)     # i.e. self.choiceOptic
-            choiceObject.Enable(False)                   # i.e. self.choiceOptic.Enable(False)
-
-    def GetBitmap(self, string):
-        img = os.path.join(os.path.dirname(__file__), string) 
-        img = wx.Image(img, wx.BITMAP_TYPE_ANY)
-        img = wx.BitmapFromImage(img) 
-        return img    
+        choiceList = self.widgetDict.keys()      
+        for choiceName in choiceList:                    
+            choiceObject = getattr(self, choiceName)     
+            choiceObject.Enable(False)                    
     
-    def OnComboOrgan(self, event=None):                                     # event based; do for only on combobox organ
-        choiceItem = event.GetInt()                                         # i.e. userinput ---->  index of selected organ
-        choiceName = event.GetEventObject().GetName()                       # i.e. choiceObject (name of organ label)
-        choiceObject = getattr(self, choiceName)                            # i.e. choiceObject = self.choiceOptic
-        id = choiceObject.GetClientData(choiceItem)                         # i.e. id = self.choiceOptic.GetClientData(choiceItem)
-        for organName in self.widgetDict[choiceName]:                       # i.e. ['Optic', 'OpticMax']  
-            if id > 0:                                                  # exclude choice(0) = ''
-                #FindPlanObject = getattr(self, 'FindPlan' + organName)          # i.e. self.FindPlanOptic
-                #FindPlanObject(id)
+    def OnComboOrgan(self, event=None):                 # event based
+        choiceItem = event.GetInt()                     # i.e. userinput-> index
+        choiceName = event.GetEventObject().GetName()   # i.e. choiceObject
+        choiceObject = getattr(self, choiceName)        # i.e. self.choiceOptic
+        id = choiceObject.GetClientData(choiceItem)     
+        for organName in self.widgetDict[choiceName]:    
+            if id > 0:                                  # exclude choice(0) = ''
                 self.FindOrganPlan(id, organName)
             else:
-                PlanObject = getattr(self, 'plan' + organName)      # i.e. self.planOptic
-                ImgObject = getattr(self, 'img' + organName)      # i.e. self.planOptic
+                PlanObject = getattr(self, 'plan' + organName)      
+                ImgObject = getattr(self, 'img' + organName)
                 PlanObject.Clear()            
-                ImgObject.SetBitmap(self.GetBitmap('transparent.png'))
+                ImgObject.SetBitmap(self.imgTransparent)
         
     def FindOrganPlan(self, id, organName):   
-        LimitObject = getattr(self, 'limit' + organName)      # i.e. self.planOptic
-        PlanObject = getattr(self, 'plan' + organName)      # i.e. self.planOptic
-        ImgObject = getattr(self, 'img' + organName)      # i.e. self.planOptic
+        LimitObject = getattr(self, 'limit' + organName)      
+        PlanObject = getattr(self, 'plan' + organName)
+        ImgObject = getattr(self, 'img' + organName)
         self.dvhdata[id] = dvhdata.DVH(self.dvhs[id])
-        if hasattr(self, 'vol' + organName) == True:        # exclude statictext = max point                   
-            VolObject = getattr(self, 'vol' + organName)    # i.e. self.volOptic     
+        total_vol = dvhdata.CalculateVolume(self.structures[id])
+        if hasattr(self, 'vol' + organName) == True:        # exclude statictext                 
+            VolObject = getattr(self, 'vol' + organName)      
             if '%' in VolObject.GetValue():   #hilum
                 s = VolObject.GetValue()
                 s = s.rstrip('%')
                 formatted_vol = s 
-        if '> ' in LimitObject.GetValue():  #hilum and lung
+        if '> ' in LimitObject.GetValue():   #hilum and lung
             s = LimitObject.GetValue()
             s = s.lstrip('> ')
             formatted_limit = s
-        if 'Max' not in organName:
-            total_vol = dvhdata.CalculateVolume(self.structures[id])
+        if 'Max' not in organName: 
             if 'formatted_vol' in locals():
                 Vol = float(formatted_vol)*100/total_vol
             else:
@@ -421,21 +427,23 @@ class AnalysisPanel(wx.Dialog):
                 crit_vol = str(round(crit_vol,1))
                 PlanObject.SetValue(crit_vol) 
                 if float(PlanObject.GetValue()) > float(formatted_limit):
-                    ImgObject.SetBitmap(self.GetBitmap('check.png'))
+                    ImgObject.SetBitmap(self.imgCheck)
                 else:
-                    ImgObject.SetBitmap(self.GetBitmap('flag.png'))
+                    ImgObject.SetBitmap(self.imgFlag)
             else:
                 PlanObject.SetValue(dose)
                 if float(PlanObject.GetValue()) < float(LimitObject.GetValue()):
-                    ImgObject.SetBitmap(self.GetBitmap('check.png'))
+                    ImgObject.SetBitmap(self.imgCheck)
                 else:
-                    ImgObject.SetBitmap(self.GetBitmap('flag.png'))
+                    ImgObject.SetBitmap(self.imgFlag)
 
-        else:                   # dose max
-            dose = self.dvhdata[id].GetDoseConstraint(0) #dose at DVH tail
+        else:                                           # dose max
+            voxelPointVol = 0.035 * 100/total_vol       # 0.035 cc is "voxel"
+            dose = self.dvhdata[id].GetDoseConstraint(voxelPointVol) #dose at DVH tail
             dose = str(dose/100)
             PlanObject.SetValue(dose)
             if float(PlanObject.GetValue()) < float(LimitObject.GetValue()):
-                ImgObject.SetBitmap(self.GetBitmap('check.png'))
+                ImgObject.SetBitmap(self.imgCheck)
             else:
-                ImgObject.SetBitmap(self.GetBitmap('flag.png'))                 
+                ImgObject.SetBitmap(self.imgFlag)               
+                
