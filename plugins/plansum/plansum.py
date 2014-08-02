@@ -1,5 +1,5 @@
 try:
-    import dicomgui, guiutil
+    from dicompyler import dicomgui, guiutil
 except ImportError:
     #Running as __main__, not as a plugin
     pass
