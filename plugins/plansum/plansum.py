@@ -1,11 +1,12 @@
 try:
-    from dicompyler import dicomgui, guiutil
+    from dicompyler import dicomgui, guiutil, util
 except ImportError:
     #Running as __main__, not as a plugin
     pass
 
 import wx
 from wx.lib.pubsub import Publisher as pub
+from wx.xrc import XmlResource
 import numpy as np
 import dicom
 import matplotlib.mlab as mlab
@@ -32,6 +33,27 @@ def pluginProperties():
         'http://code.google.com/p/dicompyler-plugins/wiki/plansum'
 
     return props
+def ImportDicom(parent):
+    """Prepare to show the dialog that will Import DICOM and DICOM RT files."""
+
+    # Load the XRC file for our gui resources
+    res = XmlResource(util.GetResourcePath('dicomgui.xrc'))
+
+    dlgDicomImporter = res.LoadDialog(parent, "DicomImporterDialog")
+    dlgDicomImporter.Init(res)
+
+    # Show the dialog and return the result
+    if (dlgDicomImporter.ShowModal() == wx.ID_OK):
+        value = dlgDicomImporter.GetPatient()
+        #pub.sendMessage('patient.updated.raw_data', value)
+    else:
+        value = {}
+    # Block until the thread is done before destroying the dialog
+    if dlgDicomImporter:
+        dlgDicomImporter.t.join()
+        dlgDicomImporter.Destroy()
+
+    return value
 
 class plugin:
     
@@ -61,7 +83,7 @@ class plugin:
         
     def pluginMenu(self, evt):
         """Open a new RT Dose object and sum it with the current dose"""
-        self.ptdata = dicomgui.ImportDicom(self.parent)
+        self.ptdata = ImportDicom(self.parent)
        
         if (self.ptdata['rtplan'].SeriesInstanceUID != \
             self.rtplan.SeriesInstanceUID):
