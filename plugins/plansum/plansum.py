@@ -5,16 +5,16 @@ except ImportError:
     pass
 
 import wx
-from wx.lib.pubsub import Publisher as pub
+from wx.lib.pubsub import pub
 from wx.xrc import XmlResource
 import numpy as np
-import dicom
+import pydicom
 import matplotlib.mlab as mlab
 import numpy.testing as npt
     
 import unittest
 import os
-import threading, Queue
+import threading, queue
 
 
 def pluginProperties():
@@ -24,7 +24,7 @@ def pluginProperties():
     props['name'] = 'Sum RT Dose'
     props['description'] = "Adds multiple RT Dose objects together."
     props['author'] = 'Stephen Terry'
-    props['version'] = 0.3
+    props['version'] = 0.4
     props['plugin_type'] = 'menu'
     props['plugin_version'] = 1
     props['min_dicom'] = ['rtdose','rtplan']
@@ -67,14 +67,14 @@ class plugin:
         
     def OnUpdatePatient(self, msg):
         """Update and load the patient data."""
-        if msg.data.has_key('rtdose'):
-            self.rtdose = msg.data['rtdose']
-        if msg.data.has_key('rxdose'):
-            self.rxdose = msg.data['rxdose']
-        if msg.data.has_key('structures'):
-            self.structures = msg.data['structures']
-        if msg.data.has_key('rtplan'):
-            self.rtplan = msg.data['rtplan']
+        if 'rtdose' in msg:
+            self.rtdose = msg['rtdose']
+        if 'rxdose' in msg:
+            self.rxdose = msg['rxdose']
+        if 'structures' in msg:
+            self.structures = msg['structures']
+        if 'rtplan' in msg:
+            self.rtplan = msg['rtplan']
     
     def OnDestroy(self, evt):
         """Unbind to all events before the plugin is destroyed."""
@@ -99,17 +99,17 @@ class plugin:
         dlgProgress = guiutil.get_progress_dialog(
                 wx.GetApp().GetTopWindow(),
                 "Creating Plan Sum...")
-        q = Queue.Queue()
+        q = queue.Queue()
         threading.Thread(target=SumPlan, args=(old, new, q,
                                         dlgProgress.OnUpdateProgress)).start()
         dlgProgress.ShowModal()
         dlgProgress.Destroy()
         sumDicomObj = q.get()
-        del sumDicomObj.DVHs
+        del sumDicomObj.DVHSequence
         self.ptdata['rtdose'] = sumDicomObj
-        if self.ptdata.has_key('rxdose') and self.rxdose:
+        if 'rxdose' in self.ptdata and self.rxdose:
             self.ptdata['rxdose'] = self.rxdose + self.ptdata['rxdose']
-        pub.sendMessage('patient.updated.raw_data', self.ptdata)
+        pub.sendMessage('patient.updated.raw_data', msg=self.ptdata)
         
         
 def SumPlan(old, new, q, progressFunc=None):
@@ -132,7 +132,7 @@ def SumPlan(old, new, q, progressFunc=None):
         old.pixel_array.shape == new.pixel_array.shape and
         old.PixelSpacing == new.PixelSpacing and
         old.GridFrameOffsetVector == new.GridFrameOffsetVector):
-        print "PlanSum: Using direct summation"
+        print("PlanSum: Using direct summation")
         if progressFunc:
             wx.CallAfter(progressFunc, 0, 1, 'Using direct summation')
         sum = old.pixel_array*old.DoseGridScaling + \
@@ -206,7 +206,7 @@ def SumPlan(old, new, q, progressFunc=None):
         sum_dcm.ImagePositionPatient = list(sum_ip)
         sum_dcm.Rows = len(y_vals)
         sum_dcm.Columns = len(x_vals)
-        sum_dcm.NumberofFrames = len(z_vals)
+        sum_dcm.NumberOfFrames = len(z_vals)
         sum_dcm.PixelSpacing = [scale_sum[0],scale_sum[1]]
         sum_dcm.GridFrameOffsetVector = list(z_vals - sum_ip[2])
                 
@@ -216,7 +216,7 @@ def SumPlan(old, new, q, progressFunc=None):
     sum = sum/sum_scaling
     sum = np.uint32(sum)
     
-    sum_dcm.pixel_array = sum
+    #sum_dcm.pixel_array = sum
     sum_dcm.BitsAllocated = 32
     sum_dcm.BitsStored = 32
     sum_dcm.HighBit = 31
@@ -253,7 +253,7 @@ def interpolate_image(input_array, scale, offset, xyz_coords, progressFunc):
     indices[1] = (xyz_coords[1] - offset[1])/scale[1]
     indices[2] = (xyz_coords[2] - offset[2])/scale[2]
     
-    print "PlanSum: Using trilinear_interp"
+    print("PlanSum: Using trilinear_interp")
     return trilinear_interp(input_array, indices, progressFunc)
 
 
@@ -296,9 +296,9 @@ def trilinear_interp(input_array, indices, progressFunc=None):
 class PlanSumTest(unittest.TestCase):
     
     def testPlanSum(self):
-        ss = dicom.read_file('./testdata/rtss.dcm')
-        rtd1 = dicom.read_file('./testdata/rtdose1.dcm')
-        rtd2 = dicom.read_file('./testdata/rtdose2.dcm')
+        ss = pydicom.read_file('./testdata/rtss.dcm')
+        rtd1 = pydicom.read_file('./testdata/rtdose1.dcm')
+        rtd2 = pydicom.read_file('./testdata/rtdose2.dcm')
 
         sum = SumPlan(rtd1, rtd2, None)
         
