@@ -105,7 +105,8 @@ class plugin:
         dlgProgress.ShowModal()
         dlgProgress.Destroy()
         sumDicomObj = q.get()
-        del sumDicomObj.DVHSequence
+        if hasattr(sumDicomObj, 'DVHSequence'):
+            del sumDicomObj.DVHSequence
         self.ptdata['rtdose'] = sumDicomObj
         if 'rxdose' in self.ptdata and self.rxdose:
             self.ptdata['rxdose'] = self.rxdose + self.ptdata['rxdose']
